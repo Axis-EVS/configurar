@@ -90,6 +90,8 @@ let deletingCardapioId = null;
 let editingProgramaId = null;
 let deletingProgramaId = null;
 let allCardapioItems = [];
+let allProgramasItems = [];
+let allCategoriesOrder = ["Nutrição", "Bebidas"];
 let currentCategoryFilter = "all";
 
 // ==========================================
@@ -250,17 +252,103 @@ function updateDashboardMetrics() {
 }
 
 // ==========================================
-// GESTÃO DE CARDÁPIO (CRUD & FILTERING)
+// GESTÃO DE CARDÁPIO (CRUD, ORDERING & FILTERING)
 // ==========================================
 async function fetchCardapioItems() {
   try {
-    const { data: t, error: e } = await supabaseApp.from("cardapio").select("*").order("created_at", { ascending: false });
+    const { data: t, error: e } = await supabaseApp
+      .from("cardapio")
+      .select("*")
+      .order("ordem", { ascending: true })
+      .order("created_at", { ascending: false });
     if (e) throw e;
     allCardapioItems = t || [];
     renderCardapioTable();
     updateDashboardMetrics();
   } catch (t) {
     console.error("Error fetching cardapio items:", t);
+  }
+}
+
+async function moveCardapioItem(item, direction) {
+  const index = allCardapioItems.findIndex(i => i.id === item.id);
+  if (index === -1) return;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= allCardapioItems.length) return;
+
+  const targetItem = allCardapioItems[targetIndex];
+  let currentOrder = Number(item.ordem != null ? item.ordem : index);
+  let targetOrder = Number(targetItem.ordem != null ? targetItem.ordem : targetIndex);
+  if (currentOrder === targetOrder) {
+    currentOrder = targetIndex;
+    targetOrder = index;
+  }
+
+  try {
+    const [res1, res2] = await Promise.all([
+      supabaseApp.from("cardapio").update({ ordem: targetOrder }).eq("id", item.id),
+      supabaseApp.from("cardapio").update({ ordem: currentOrder }).eq("id", targetItem.id)
+    ]);
+    if (res1.error) throw res1.error;
+    if (res2.error) throw res2.error;
+    showToast("Ordem do produto atualizada!");
+    await fetchCardapioItems();
+  } catch (err) {
+    console.error("Erro ao reordenar cardápio:", err);
+    showToast("Erro ao reordenar produto: " + err.message, "error");
+  }
+}
+
+// Category Order Reordering Controls
+function renderCategoryOrderControls() {
+  const container = document.getElementById("category-order-container");
+  if (!container) return;
+  container.innerHTML = "";
+
+  allCategoriesOrder.forEach((cat, idx) => {
+    const isFirst = idx === 0;
+    const isLast = idx === allCategoriesOrder.length - 1;
+    const icon = cat === "Nutrição" ? "🥗" : cat === "Bebidas" ? "🍹" : "🏷️";
+    
+    const chip = document.createElement("div");
+    chip.className = "flex items-center gap-2 px-3 py-1.5 bg-panel-surface border border-panel-border rounded-xl text-xs font-bold text-white shadow-sm";
+    chip.innerHTML = `
+      <span class="w-5 h-5 rounded-full bg-brand-500/20 text-brand-400 flex items-center justify-center text-[10px] font-extrabold border border-brand-500/30">${idx + 1}</span>
+      <span>${icon} ${escapeHtml(cat)}</span>
+      <div class="flex items-center ml-1 border-l border-panel-border pl-1.5 gap-0.5">
+        <button type="button" class="btn-cat-up p-1 text-slate-400 hover:text-white disabled:opacity-20 disabled:pointer-events-none rounded hover:bg-panel-hover transition-colors" ${isFirst ? "disabled" : ""} title="Mover para esquerda">
+          <span class="material-symbols-outlined text-sm">chevron_left</span>
+        </button>
+        <button type="button" class="btn-cat-down p-1 text-slate-400 hover:text-white disabled:opacity-20 disabled:pointer-events-none rounded hover:bg-panel-hover transition-colors" ${isLast ? "disabled" : ""} title="Mover para direita">
+          <span class="material-symbols-outlined text-sm">chevron_right</span>
+        </button>
+      </div>
+    `;
+
+    chip.querySelector(".btn-cat-up")?.addEventListener("click", () => moveCategory(idx, -1));
+    chip.querySelector(".btn-cat-down")?.addEventListener("click", () => moveCategory(idx, 1));
+    container.appendChild(chip);
+  });
+}
+
+async function moveCategory(fromIndex, offset) {
+  const toIndex = fromIndex + offset;
+  if (toIndex < 0 || toIndex >= allCategoriesOrder.length) return;
+  const temp = allCategoriesOrder[fromIndex];
+  allCategoriesOrder[fromIndex] = allCategoriesOrder[toIndex];
+  allCategoriesOrder[toIndex] = temp;
+  renderCategoryOrderControls();
+
+  try {
+    const { data: e } = await supabaseApp.from("empresa").select("id").limit(1);
+    if (e && e.length > 0) {
+      const { error } = await supabaseApp.from("empresa").update({ ordem_categorias: allCategoriesOrder }).eq("id", e[0].id);
+      if (error) throw error;
+      showToast("Ordem das categorias salva com sucesso!");
+    }
+  } catch (err) {
+    console.error("Erro ao salvar ordem das categorias:", err);
+    showToast("Erro ao salvar ordem das categorias: " + err.message, "error");
   }
 }
 
@@ -283,11 +371,11 @@ function renderCardapioTable() {
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-400 font-medium">Nenhum item encontrado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400 font-medium">Nenhum item encontrado.</td></tr>';
     return;
   }
 
-  filtered.forEach(item => {
+  filtered.forEach((item, fIdx) => {
     const tr = document.createElement("tr");
     tr.className = "hover:bg-panel-hover/50 transition-colors border-b border-panel-border group";
     
@@ -310,7 +398,24 @@ function renderCardapioTable() {
           <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Rascunho
         </span>`;
 
+    const itemOrder = item.ordem != null ? item.ordem : 0;
+    const isFirst = fIdx === 0;
+    const isLast = fIdx === filtered.length - 1;
+
     tr.innerHTML = `
+      <td class="p-3.5 text-center">
+        <div class="inline-flex items-center gap-1 bg-panel-card border border-panel-border px-2 py-1 rounded-xl">
+          <span class="text-xs font-extrabold text-brand-400 font-mono">#${itemOrder}</span>
+          <div class="flex flex-col gap-0.5">
+            <button class="btn-order-up text-slate-400 hover:text-white disabled:opacity-20 leading-none p-0.5 transition-colors" ${isFirst ? "disabled" : ""} title="Subir posição">
+              <span class="material-symbols-outlined text-[13px] leading-none">expand_less</span>
+            </button>
+            <button class="btn-order-down text-slate-400 hover:text-white disabled:opacity-20 leading-none p-0.5 transition-colors" ${isLast ? "disabled" : ""} title="Descer posição">
+              <span class="material-symbols-outlined text-[13px] leading-none">expand_more</span>
+            </button>
+          </div>
+        </div>
+      </td>
       <td class="p-3.5 flex items-center gap-3">
         ${thumbHtml}
         <div>
@@ -336,6 +441,8 @@ function renderCardapioTable() {
       </td>
     `;
 
+    tr.querySelector(".btn-order-up")?.addEventListener("click", () => moveCardapioItem(item, "up"));
+    tr.querySelector(".btn-order-down")?.addEventListener("click", () => moveCardapioItem(item, "down"));
     tr.querySelector(".btn-edit-cardapio").addEventListener("click", () => editCardapioItem(item));
     tr.querySelector(".btn-duplicate-cardapio").addEventListener("click", () => duplicateCardapioItem(item));
     tr.querySelector(".btn-delete-cardapio").addEventListener("click", () => {
@@ -368,10 +475,13 @@ function editCardapioItem(t) {
   document.getElementById("cardapio-subcategory").value = t.subcategoria || "Produtos";
   document.getElementById("cardapio-name").value = t.nome;
   document.getElementById("cardapio-price").value = t.preco;
+  if (document.getElementById("cardapio-order")) {
+    document.getElementById("cardapio-order").value = t.ordem != null ? t.ordem : 0;
+  }
   document.getElementById("cardapio-status").checked = t.status === "Ativo";
   setFormImagePreview("cardapio-image", t.imagem_url || "");
   document.getElementById("cardapio-show-image").checked = !!t.exibir_imagem;
-  document.getElementById("cardapio-benefits").value = (t.beneficios || []).join(", ");
+  document.getElementById("cardapio-benefits").value = (t.beneficios || []).join("; ");
   
   const title = document.getElementById("cardapio-form-title");
   if (title) title.textContent = "Editar Item";
@@ -390,10 +500,13 @@ function duplicateCardapioItem(t) {
   document.getElementById("cardapio-subcategory").value = t.subcategoria || "Produtos";
   document.getElementById("cardapio-name").value = `[Cópia] ${t.nome}`;
   document.getElementById("cardapio-price").value = t.preco;
+  if (document.getElementById("cardapio-order")) {
+    document.getElementById("cardapio-order").value = (t.ordem != null ? t.ordem : 0) + 1;
+  }
   document.getElementById("cardapio-status").checked = true;
   setFormImagePreview("cardapio-image", t.imagem_url || "");
   document.getElementById("cardapio-show-image").checked = !!t.exibir_imagem;
-  document.getElementById("cardapio-benefits").value = (t.beneficios || []).join(", ");
+  document.getElementById("cardapio-benefits").value = (t.beneficios || []).join("; ");
   
   const title = document.getElementById("cardapio-form-title");
   if (title) title.textContent = "Duplicar Item (Novo)";
@@ -408,6 +521,9 @@ function clearCardapioForm() {
   editingCardapioId = null;
   formCardapio.reset();
   document.getElementById("cardapio-id").value = "";
+  if (document.getElementById("cardapio-order")) {
+    document.getElementById("cardapio-order").value = "0";
+  }
   setFormImagePreview("cardapio-image", "");
   const t = document.getElementById("cardapio-upload-status");
   if (t) t.textContent = "";
@@ -421,13 +537,14 @@ if (formCardapio) {
   formCardapio.addEventListener("submit", async t => {
     t.preventDefault();
     const rawBenefits = document.getElementById("cardapio-benefits").value;
-    const benefits = rawBenefits ? rawBenefits.split(",").map(n => n.trim()).filter(Boolean) : [];
+    const benefits = rawBenefits ? rawBenefits.split(";").map(n => n.trim()).filter(Boolean) : [];
     
     const payload = {
       categoria: document.getElementById("cardapio-category").value,
       subcategoria: document.getElementById("cardapio-subcategory").value,
       nome: document.getElementById("cardapio-name").value.trim(),
       preco: parseFloat(document.getElementById("cardapio-price").value),
+      ordem: parseInt(document.getElementById("cardapio-order")?.value || "0", 10) || 0,
       status: document.getElementById("cardapio-status").checked ? "Ativo" : "Rascunho",
       imagem_url: document.getElementById("cardapio-image").value || "",
       exibir_imagem: document.getElementById("cardapio-show-image").checked,
@@ -479,19 +596,53 @@ btnConfirmDeleteCardapio?.addEventListener("click", async () => {
 });
 
 // ==========================================
-// GESTÃO DE PROGRAMAS
+// GESTÃO DE PROGRAMAS (CRUD & ORDERING)
 // ==========================================
 async function fetchProgramasItems() {
   try {
-    const { data: t, error: e } = await supabaseApp.from("programas").select("*").order("created_at", { ascending: false });
+    const { data: t, error: e } = await supabaseApp
+      .from("programas")
+      .select("*")
+      .order("ordem", { ascending: true })
+      .order("created_at", { ascending: false });
     if (e) throw e;
-    renderProgramasGrid(t || []);
+    allProgramasItems = t || [];
+    renderProgramasGrid(allProgramasItems);
     const kpiTotalProgramas = document.getElementById("kpi-total-programas");
     if (kpiTotalProgramas) {
-      kpiTotalProgramas.textContent = (t || []).filter(p => p.status === "Ativo").length;
+      kpiTotalProgramas.textContent = allProgramasItems.filter(p => p.status === "Ativo").length;
     }
   } catch (t) {
     console.error("Error fetching programs:", t);
+  }
+}
+
+async function moveProgramaItem(item, direction) {
+  const index = allProgramasItems.findIndex(i => i.id === item.id);
+  if (index === -1) return;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= allProgramasItems.length) return;
+
+  const targetItem = allProgramasItems[targetIndex];
+  let currentOrder = Number(item.ordem != null ? item.ordem : index);
+  let targetOrder = Number(targetItem.ordem != null ? targetItem.ordem : targetIndex);
+  if (currentOrder === targetOrder) {
+    currentOrder = targetIndex;
+    targetOrder = index;
+  }
+
+  try {
+    const [res1, res2] = await Promise.all([
+      supabaseApp.from("programas").update({ ordem: targetOrder }).eq("id", item.id),
+      supabaseApp.from("programas").update({ ordem: currentOrder }).eq("id", targetItem.id)
+    ]);
+    if (res1.error) throw res1.error;
+    if (res2.error) throw res2.error;
+    showToast("Ordem do programa atualizada!");
+    await fetchProgramasItems();
+  } catch (err) {
+    console.error("Erro ao reordenar programa:", err);
+    showToast("Erro ao reordenar programa: " + err.message, "error");
   }
 }
 
@@ -503,7 +654,7 @@ function renderProgramasGrid(t) {
     container.innerHTML = '<div class="col-span-2 text-center text-slate-400 py-10 bg-panel-surface border border-panel-border rounded-3xl">Nenhum programa cadastrado no momento.</div>';
     return;
   }
-  t.forEach(r => {
+  t.forEach((r, pIdx) => {
     const s = document.createElement("div");
     const isActive = r.status === "Ativo";
     s.className = `bg-panel-surface border border-panel-border rounded-3xl p-6 flex flex-col justify-between shadow-soft-xl transition-all hover:border-brand-500/30 ${isActive ? "" : "opacity-60"}`;
@@ -520,6 +671,10 @@ function renderProgramasGrid(t) {
       ? '<span class="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] font-bold rounded-full">Ativo</span>'
       : '<span class="px-2.5 py-1 bg-slate-500/10 text-slate-400 border border-slate-500/20 text-[11px] font-bold rounded-full">Rascunho</span>';
 
+    const progOrder = r.ordem != null ? r.ordem : 0;
+    const isFirst = pIdx === 0;
+    const isLast = pIdx === t.length - 1;
+
     const benefits = r.beneficios || [];
     const descItem = benefits.find(f => f.startsWith("[DESCRICAO]"));
     const descText = descItem ? descItem.replace("[DESCRICAO]", "") : "";
@@ -532,7 +687,20 @@ function renderProgramasGrid(t) {
             <h4 class="font-bold text-lg text-white leading-tight">${escapeHtml(r.nome)}</h4>
             <span class="text-xl font-extrabold text-emerald-400 mt-1 block">${priceFormatted}</span>
           </div>
-          ${statusBadge}
+          <div class="flex items-center gap-1.5">
+            <div class="inline-flex items-center gap-0.5 bg-panel-card border border-panel-border px-1.5 py-0.5 rounded-lg">
+              <span class="text-[11px] font-extrabold text-amber-400 font-mono">#${progOrder}</span>
+              <div class="flex flex-col">
+                <button class="btn-prog-order-up text-slate-400 hover:text-white disabled:opacity-20 leading-none p-0.5" ${isFirst ? "disabled" : ""} title="Subir ordem">
+                  <span class="material-symbols-outlined text-[12px] leading-none">expand_less</span>
+                </button>
+                <button class="btn-prog-order-down text-slate-400 hover:text-white disabled:opacity-20 leading-none p-0.5" ${isLast ? "disabled" : ""} title="Descer ordem">
+                  <span class="material-symbols-outlined text-[12px] leading-none">expand_more</span>
+                </button>
+              </div>
+            </div>
+            ${statusBadge}
+          </div>
         </div>
 
         ${coverHtml}
@@ -554,6 +722,8 @@ function renderProgramasGrid(t) {
       </div>
     `;
 
+    s.querySelector(".btn-prog-order-up")?.addEventListener("click", () => moveProgramaItem(r, "up"));
+    s.querySelector(".btn-prog-order-down")?.addEventListener("click", () => moveProgramaItem(r, "down"));
     s.querySelector(".btn-edit-programa").addEventListener("click", () => editProgramaItem(r));
     s.querySelector(".btn-delete-programa").addEventListener("click", () => {
       deletingProgramaId = r.id;
@@ -569,6 +739,9 @@ function editProgramaItem(t) {
   document.getElementById("programa-id").value = t.id;
   document.getElementById("programa-name").value = t.nome;
   document.getElementById("programa-price").value = t.preco;
+  if (document.getElementById("programa-order")) {
+    document.getElementById("programa-order").value = t.ordem != null ? t.ordem : 0;
+  }
   document.getElementById("programa-status").checked = t.status === "Ativo";
   setFormImagePreview("programa-image", t.imagem_url || "");
   document.getElementById("programa-show-image").checked = !!t.exibir_imagem;
@@ -579,7 +752,7 @@ function editProgramaItem(t) {
   const otherBenefits = benefits.filter(i => !i.startsWith("[DESCRICAO]"));
 
   document.getElementById("programa-description").value = descText;
-  document.getElementById("programa-benefits").value = otherBenefits.join(", ");
+  document.getElementById("programa-benefits").value = otherBenefits.join("; ");
   
   const title = document.getElementById("programa-form-title");
   if (title) title.textContent = "Editar Programa";
@@ -595,6 +768,9 @@ function clearProgramaForm() {
   editingProgramaId = null;
   formPrograma.reset();
   document.getElementById("programa-id").value = "";
+  if (document.getElementById("programa-order")) {
+    document.getElementById("programa-order").value = "0";
+  }
   document.getElementById("programa-description").value = "";
   setFormImagePreview("programa-image", "");
   const t = document.getElementById("programa-upload-status");
@@ -610,12 +786,13 @@ if (formPrograma) {
     t.preventDefault();
     const desc = document.getElementById("programa-description").value.trim();
     const rawBenefits = document.getElementById("programa-benefits").value;
-    const benefits = rawBenefits ? rawBenefits.split(",").map(i => i.trim()).filter(Boolean) : [];
+    const benefits = rawBenefits ? rawBenefits.split(";").map(i => i.trim()).filter(Boolean) : [];
     if (desc) benefits.unshift(`[DESCRICAO]${desc}`);
 
     const payload = {
       nome: document.getElementById("programa-name").value.trim(),
       preco: parseFloat(document.getElementById("programa-price").value),
+      ordem: parseInt(document.getElementById("programa-order")?.value || "0", 10) || 0,
       status: document.getElementById("programa-status").checked ? "Ativo" : "Rascunho",
       imagem_url: document.getElementById("programa-image").value || "",
       exibir_imagem: document.getElementById("programa-show-image").checked,
@@ -674,6 +851,11 @@ async function fetchEspacoInfo() {
     const { data: t, error: e } = await supabaseApp.from("empresa").select("*").limit(1).maybeSingle();
     if (e) throw e;
     if (t) {
+      if (t.ordem_categorias && Array.isArray(t.ordem_categorias) && t.ordem_categorias.length > 0) {
+        allCategoriesOrder = t.ordem_categorias;
+      }
+      renderCategoryOrderControls();
+
       if (document.getElementById("hero-toggle")) document.getElementById("hero-toggle").checked = !!t.exibir_imagem_hero;
       if (document.getElementById("hero-title")) document.getElementById("hero-title").value = t.titulo_hero || "";
       if (document.getElementById("hero-subtitle")) document.getElementById("hero-subtitle").value = t.descricao_hero || "";
@@ -690,6 +872,8 @@ async function fetchEspacoInfo() {
       setFormImagePreview("destaque-cha-image", t.imagem_destaque_cha || "");
 
       if (document.getElementById("footer-instagram")) document.getElementById("footer-instagram").value = t.url_instagram || "";
+    } else {
+      renderCategoryOrderControls();
     }
   } catch (t) {
     console.error("Error loading home configuration:", t);
