@@ -91,8 +91,10 @@ let editingProgramaId = null;
 let deletingProgramaId = null;
 let allCardapioItems = [];
 let allProgramasItems = [];
-let allCategoriesOrder = ["Nutrição", "Bebidas"];
+let allCategoriesOrder = ["Nutrição", "Bebidas", "Produtos Fechados"];
 let currentCategoryFilter = "all";
+let cardapioImages = [];
+let programaImages = [];
 
 // ==========================================
 // TOAST NOTIFICATION SYSTEM
@@ -308,7 +310,7 @@ function renderCategoryOrderControls() {
   allCategoriesOrder.forEach((cat, idx) => {
     const isFirst = idx === 0;
     const isLast = idx === allCategoriesOrder.length - 1;
-    const icon = cat === "Nutrição" ? "🥗" : cat === "Bebidas" ? "🍹" : "🏷️";
+    const icon = cat === "Nutrição" ? "🥗" : cat === "Bebidas" ? "🍹" : cat === "Produtos Fechados" ? "📦" : "🏷️";
     
     const chip = document.createElement("div");
     chip.className = "flex items-center gap-2 px-3 py-1.5 bg-panel-surface border border-panel-border rounded-xl text-xs font-bold text-white shadow-sm";
@@ -382,9 +384,14 @@ function renderCardapioTable() {
     const priceFormatted = Number(item.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
     const isActive = item.status === "Ativo";
     
-    const thumbHtml = item.exibir_imagem && item.imagem_url
-      ? `<div class="w-12 h-12 rounded-xl bg-panel-card border border-panel-border p-1 flex items-center justify-center shrink-0">
-          <img class="w-full h-full object-contain" src="${escapeHtml(item.imagem_url)}" alt="${escapeHtml(item.nome)}"/>
+    const cardapioImgs = Array.isArray(item.imagens) && item.imagens.length > 0 ? item.imagens : (item.imagem_url ? [item.imagem_url] : []);
+    const cardapioCover = cardapioImgs[0] || item.imagem_url || "";
+    const hasMultipleCardapio = cardapioImgs.length > 1;
+
+    const thumbHtml = item.exibir_imagem && cardapioCover
+      ? `<div class="w-12 h-12 rounded-xl bg-panel-card border border-panel-border p-1 flex items-center justify-center shrink-0 relative">
+          <img class="w-full h-full object-contain" src="${escapeHtml(cardapioCover)}" alt="${escapeHtml(item.nome)}"/>
+          ${hasMultipleCardapio ? `<span class="absolute -bottom-1 -right-1 bg-brand-500 text-white text-[9px] font-extrabold px-1 rounded-full shadow leading-tight border border-panel-card" title="${cardapioImgs.length} fotos">+${cardapioImgs.length}</span>` : ""}
         </div>`
       : `<div class="w-12 h-12 rounded-xl bg-panel-input border border-panel-border flex items-center justify-center text-slate-500 shrink-0">
           <span class="material-symbols-outlined text-lg">restaurant</span>
@@ -479,7 +486,8 @@ function editCardapioItem(t) {
     document.getElementById("cardapio-order").value = t.ordem != null ? t.ordem : 0;
   }
   document.getElementById("cardapio-status").checked = t.status === "Ativo";
-  setFormImagePreview("cardapio-image", t.imagem_url || "");
+  cardapioImages = Array.isArray(t.imagens) && t.imagens.length > 0 ? [...t.imagens] : (t.imagem_url ? [t.imagem_url] : []);
+  renderCardapioGallery();
   document.getElementById("cardapio-show-image").checked = !!t.exibir_imagem;
   document.getElementById("cardapio-benefits").value = (t.beneficios || []).join("; ");
   
@@ -504,7 +512,8 @@ function duplicateCardapioItem(t) {
     document.getElementById("cardapio-order").value = (t.ordem != null ? t.ordem : 0) + 1;
   }
   document.getElementById("cardapio-status").checked = true;
-  setFormImagePreview("cardapio-image", t.imagem_url || "");
+  cardapioImages = Array.isArray(t.imagens) && t.imagens.length > 0 ? [...t.imagens] : (t.imagem_url ? [t.imagem_url] : []);
+  renderCardapioGallery();
   document.getElementById("cardapio-show-image").checked = !!t.exibir_imagem;
   document.getElementById("cardapio-benefits").value = (t.beneficios || []).join("; ");
   
@@ -524,7 +533,8 @@ function clearCardapioForm() {
   if (document.getElementById("cardapio-order")) {
     document.getElementById("cardapio-order").value = "0";
   }
-  setFormImagePreview("cardapio-image", "");
+  cardapioImages = [];
+  renderCardapioGallery();
   const t = document.getElementById("cardapio-upload-status");
   if (t) t.textContent = "";
   const title = document.getElementById("cardapio-form-title");
@@ -546,7 +556,8 @@ if (formCardapio) {
       preco: parseFloat(document.getElementById("cardapio-price").value),
       ordem: parseInt(document.getElementById("cardapio-order")?.value || "0", 10) || 0,
       status: document.getElementById("cardapio-status").checked ? "Ativo" : "Rascunho",
-      imagem_url: document.getElementById("cardapio-image").value || "",
+      imagem_url: cardapioImages[0] || "",
+      imagens: cardapioImages,
       exibir_imagem: document.getElementById("cardapio-show-image").checked,
       beneficios: benefits
     };
@@ -661,9 +672,14 @@ function renderProgramasGrid(t) {
     
     const priceFormatted = Number(r.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
     
-    const coverHtml = r.exibir_imagem && r.imagem_url
-      ? `<div class="h-36 w-full rounded-2xl overflow-hidden mb-4 bg-panel-card border border-panel-border p-2 flex items-center justify-center shrink-0">
-          <img class="w-full h-full object-contain" src="${escapeHtml(r.imagem_url)}" alt="${escapeHtml(r.nome)}"/>
+    const progImgs = Array.isArray(r.imagens) && r.imagens.length > 0 ? r.imagens : (r.imagem_url ? [r.imagem_url] : []);
+    const progCover = progImgs[0] || r.imagem_url || "";
+    const hasMultipleProg = progImgs.length > 1;
+
+    const coverHtml = r.exibir_imagem && progCover
+      ? `<div class="h-36 w-full rounded-2xl overflow-hidden mb-4 bg-panel-card border border-panel-border p-2 flex items-center justify-center shrink-0 relative">
+          <img class="w-full h-full object-contain" src="${escapeHtml(progCover)}" alt="${escapeHtml(r.nome)}"/>
+          ${hasMultipleProg ? `<span class="absolute bottom-2 right-2 bg-amber-500 text-brand-950 text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow flex items-center gap-1"><span class="material-symbols-outlined text-xs">photo_library</span> ${progImgs.length} fotos</span>` : ""}
         </div>`
       : "";
 
@@ -743,7 +759,8 @@ function editProgramaItem(t) {
     document.getElementById("programa-order").value = t.ordem != null ? t.ordem : 0;
   }
   document.getElementById("programa-status").checked = t.status === "Ativo";
-  setFormImagePreview("programa-image", t.imagem_url || "");
+  programaImages = Array.isArray(t.imagens) && t.imagens.length > 0 ? [...t.imagens] : (t.imagem_url ? [t.imagem_url] : []);
+  renderProgramaGallery();
   document.getElementById("programa-show-image").checked = !!t.exibir_imagem;
   
   const benefits = t.beneficios || [];
@@ -772,7 +789,8 @@ function clearProgramaForm() {
     document.getElementById("programa-order").value = "0";
   }
   document.getElementById("programa-description").value = "";
-  setFormImagePreview("programa-image", "");
+  programaImages = [];
+  renderProgramaGallery();
   const t = document.getElementById("programa-upload-status");
   if (t) t.textContent = "";
   const title = document.getElementById("programa-form-title");
@@ -794,7 +812,8 @@ if (formPrograma) {
       preco: parseFloat(document.getElementById("programa-price").value),
       ordem: parseInt(document.getElementById("programa-order")?.value || "0", 10) || 0,
       status: document.getElementById("programa-status").checked ? "Ativo" : "Rascunho",
-      imagem_url: document.getElementById("programa-image").value || "",
+      imagem_url: programaImages[0] || "",
+      imagens: programaImages,
       exibir_imagem: document.getElementById("programa-show-image").checked,
       beneficios: benefits
     };
@@ -852,7 +871,10 @@ async function fetchEspacoInfo() {
     if (e) throw e;
     if (t) {
       if (t.ordem_categorias && Array.isArray(t.ordem_categorias) && t.ordem_categorias.length > 0) {
-        allCategoriesOrder = t.ordem_categorias;
+        allCategoriesOrder = [...t.ordem_categorias];
+        if (!allCategoriesOrder.includes("Produtos Fechados")) {
+          allCategoriesOrder.push("Produtos Fechados");
+        }
       }
       renderCategoryOrderControls();
 
@@ -994,12 +1016,173 @@ async function uploadImageFile(file, textId, statusId) {
   }
 }
 
+// Gallery rendering functions
+function renderCardapioGallery() {
+  const container = document.getElementById("cardapio-gallery-container");
+  const list = document.getElementById("cardapio-gallery-list");
+  const count = document.getElementById("cardapio-gallery-count");
+  const hiddenInput = document.getElementById("cardapio-image");
+  if (!container || !list) return;
+
+  if (cardapioImages.length === 0) {
+    container.classList.add("hidden");
+    list.innerHTML = "";
+    if (hiddenInput) hiddenInput.value = "";
+    return;
+  }
+
+  container.classList.remove("hidden");
+  if (hiddenInput) hiddenInput.value = cardapioImages[0] || "";
+  if (count) count.textContent = `${cardapioImages.length} foto${cardapioImages.length > 1 ? "s" : ""} adicionada${cardapioImages.length > 1 ? "s" : ""}`;
+
+  list.innerHTML = cardapioImages.map((url, idx) => {
+    const isCover = idx === 0;
+    return `
+      <div class="relative group rounded-xl bg-panel-card border ${isCover ? "border-brand-500 shadow-sm ring-1 ring-brand-500/50" : "border-panel-border"} p-1.5 flex flex-col gap-1 overflow-hidden transition-all">
+        <div class="relative w-full h-20 rounded-lg overflow-hidden bg-panel-input flex items-center justify-center">
+          <img src="${escapeHtml(url)}" class="w-full h-full object-contain" alt="Foto ${idx + 1}"/>
+          ${isCover ? '<span class="absolute top-1 left-1 bg-brand-600/95 backdrop-blur text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow">★ CAPA</span>' : `<span class="absolute top-1 left-1 bg-black/60 text-slate-300 text-[9px] font-mono px-1 rounded">#${idx + 1}</span>`}
+        </div>
+        <div class="flex items-center justify-between gap-1 pt-0.5">
+          ${!isCover ? `<button type="button" class="btn-cardapio-make-cover text-[10px] text-brand-400 hover:text-brand-300 hover:underline font-bold" data-idx="${idx}">Tornar Capa</button>` : `<span class="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5"><span class="material-symbols-outlined text-xs">check</span> Principal</span>`}
+          <button type="button" class="btn-cardapio-del-img p-1 text-slate-400 hover:text-red-400 rounded hover:bg-red-950/30 transition-colors" data-idx="${idx}" title="Remover foto">
+            <span class="material-symbols-outlined text-sm leading-none">delete</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  list.querySelectorAll(".btn-cardapio-make-cover").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-idx"), 10);
+      const chosen = cardapioImages.splice(idx, 1)[0];
+      cardapioImages.unshift(chosen);
+      renderCardapioGallery();
+      showToast("Foto principal atualizada!");
+    });
+  });
+
+  list.querySelectorAll(".btn-cardapio-del-img").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-idx"), 10);
+      cardapioImages.splice(idx, 1);
+      renderCardapioGallery();
+      showToast("Foto removida da galeria.");
+    });
+  });
+}
+
+function renderProgramaGallery() {
+  const container = document.getElementById("programa-gallery-container");
+  const list = document.getElementById("programa-gallery-list");
+  const count = document.getElementById("programa-gallery-count");
+  const hiddenInput = document.getElementById("programa-image");
+  if (!container || !list) return;
+
+  if (programaImages.length === 0) {
+    container.classList.add("hidden");
+    list.innerHTML = "";
+    if (hiddenInput) hiddenInput.value = "";
+    return;
+  }
+
+  container.classList.remove("hidden");
+  if (hiddenInput) hiddenInput.value = programaImages[0] || "";
+  if (count) count.textContent = `${programaImages.length} foto${programaImages.length > 1 ? "s" : ""} adicionada${programaImages.length > 1 ? "s" : ""}`;
+
+  list.innerHTML = programaImages.map((url, idx) => {
+    const isCover = idx === 0;
+    return `
+      <div class="relative group rounded-xl bg-panel-card border ${isCover ? "border-amber-500 shadow-sm ring-1 ring-amber-500/50" : "border-panel-border"} p-1.5 flex flex-col gap-1 overflow-hidden transition-all">
+        <div class="relative w-full h-20 rounded-lg overflow-hidden bg-panel-input flex items-center justify-center">
+          <img src="${escapeHtml(url)}" class="w-full h-full object-contain" alt="Foto ${idx + 1}"/>
+          ${isCover ? '<span class="absolute top-1 left-1 bg-amber-600/95 backdrop-blur text-white text-[9px] font-extrabold px-1.5 py-0.5 rounded shadow">★ CAPA</span>' : `<span class="absolute top-1 left-1 bg-black/60 text-slate-300 text-[9px] font-mono px-1 rounded">#${idx + 1}</span>`}
+        </div>
+        <div class="flex items-center justify-between gap-1 pt-0.5">
+          ${!isCover ? `<button type="button" class="btn-programa-make-cover text-[10px] text-amber-400 hover:text-amber-300 hover:underline font-bold" data-idx="${idx}">Tornar Capa</button>` : `<span class="text-[10px] text-amber-400 font-bold flex items-center gap-0.5"><span class="material-symbols-outlined text-xs">check</span> Principal</span>`}
+          <button type="button" class="btn-programa-del-img p-1 text-slate-400 hover:text-red-400 rounded hover:bg-red-950/30 transition-colors" data-idx="${idx}" title="Remover foto">
+            <span class="material-symbols-outlined text-sm leading-none">delete</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  list.querySelectorAll(".btn-programa-make-cover").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-idx"), 10);
+      const chosen = programaImages.splice(idx, 1)[0];
+      programaImages.unshift(chosen);
+      renderProgramaGallery();
+      showToast("Foto principal atualizada!");
+    });
+  });
+
+  list.querySelectorAll(".btn-programa-del-img").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-idx"), 10);
+      programaImages.splice(idx, 1);
+      renderProgramaGallery();
+      showToast("Foto removida da galeria.");
+    });
+  });
+}
+
+async function uploadMultipleFiles(files, isCardapio = true) {
+  if (!files || files.length === 0) return;
+  const statusEl = document.getElementById(isCardapio ? "cardapio-upload-status" : "programa-upload-status");
+  const targetArray = isCardapio ? cardapioImages : programaImages;
+  const renderFn = isCardapio ? renderCardapioGallery : renderProgramaGallery;
+
+  const validFiles = Array.from(files).filter(f => {
+    if (f.size > 5 * 1024 * 1024) {
+      alert(`O arquivo ${f.name} excede o limite de 5MB.`);
+      return false;
+    }
+    if (!["image/jpeg", "image/png", "image/webp", "image/jpg"].includes(f.type)) {
+      alert(`Tipo de arquivo não permitido para ${f.name}. Use JPG, PNG ou WebP.`);
+      return false;
+    }
+    return true;
+  });
+
+  if (validFiles.length === 0) return;
+
+  if (statusEl) {
+    statusEl.textContent = `⏳ Enviando ${validFiles.length} foto(s) para a nuvem...`;
+    statusEl.className = "text-xs text-amber-400 mt-1 block font-medium";
+  }
+
+  let uploadedCount = 0;
+  for (const file of validFiles) {
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `uploads/${Math.random().toString(36).substring(2)}-${Date.now()}.${ext}`;
+      const { data: c, error: u } = await supabaseApp.storage.from("images").upload(filePath, file);
+      if (u) throw u;
+      const { data: { publicUrl } } = supabaseApp.storage.from("images").getPublicUrl(filePath);
+      targetArray.push(publicUrl);
+      uploadedCount++;
+    } catch (err) {
+      console.error("Erro no upload de", file.name, err);
+    }
+  }
+
+  renderFn();
+  if (statusEl) {
+    statusEl.textContent = `✅ ${uploadedCount} foto(s) adicionada(s) com sucesso!`;
+    statusEl.className = "text-xs text-emerald-400 mt-1 block font-medium";
+    setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 4000);
+  }
+  showToast(`${uploadedCount} foto(s) adicionada(s) à galeria!`);
+}
+
 function setupUploads() {
+  // Single image uploads (Institucional / Destaques da Vitrine)
   const uploadConfigs = [
     { dropzoneId: "hero-dropzone", fileId: "hero-image-file", textId: "hero-image", statusId: "hero-upload-status" },
     { dropzoneId: "about-dropzone", fileId: "about-image-file", textId: "about-image", statusId: "about-upload-status" },
-    { dropzoneId: "cardapio-dropzone", fileId: "cardapio-image-file", textId: "cardapio-image", statusId: "cardapio-upload-status" },
-    { dropzoneId: "programa-dropzone", fileId: "programa-image-file", textId: "programa-image", statusId: "programa-upload-status" },
     // Vitrine highlights
     { dropzoneId: "destaque-shake-dropzone", fileId: "destaque-shake-image-file", textId: "destaque-shake-image", statusId: "destaque-shake-upload-status" },
     { dropzoneId: "destaque-waffle-dropzone", fileId: "destaque-waffle-image-file", textId: "destaque-waffle-image", statusId: "destaque-waffle-upload-status" },
@@ -1038,12 +1221,62 @@ function setupUploads() {
     }
   });
 
-  // Remove buttons
+  // Cardápio Multi-Image Dropzone & File Input
+  const cardapioDrop = document.getElementById("cardapio-dropzone");
+  const cardapioFileIn = document.getElementById("cardapio-image-file");
+  if (cardapioDrop && cardapioFileIn) {
+    cardapioDrop.addEventListener("click", () => cardapioFileIn.click());
+    cardapioDrop.addEventListener("dragover", e => {
+      e.preventDefault();
+      cardapioDrop.classList.add("dropzone-active");
+    });
+    cardapioDrop.addEventListener("dragleave", e => {
+      e.preventDefault();
+      cardapioDrop.classList.remove("dropzone-active");
+    });
+    cardapioDrop.addEventListener("drop", e => {
+      e.preventDefault();
+      cardapioDrop.classList.remove("dropzone-active");
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) uploadMultipleFiles(files, true);
+    });
+    cardapioFileIn.addEventListener("change", e => {
+      const files = e.target.files;
+      if (files && files.length > 0) uploadMultipleFiles(files, true);
+      cardapioFileIn.value = "";
+    });
+  }
+
+  // Programas Multi-Image Dropzone & File Input
+  const progDrop = document.getElementById("programa-dropzone");
+  const progFileIn = document.getElementById("programa-image-file");
+  if (progDrop && progFileIn) {
+    progDrop.addEventListener("click", () => progFileIn.click());
+    progDrop.addEventListener("dragover", e => {
+      e.preventDefault();
+      progDrop.classList.add("dropzone-active");
+    });
+    progDrop.addEventListener("dragleave", e => {
+      e.preventDefault();
+      progDrop.classList.remove("dropzone-active");
+    });
+    progDrop.addEventListener("drop", e => {
+      e.preventDefault();
+      progDrop.classList.remove("dropzone-active");
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) uploadMultipleFiles(files, false);
+    });
+    progFileIn.addEventListener("change", e => {
+      const files = e.target.files;
+      if (files && files.length > 0) uploadMultipleFiles(files, false);
+      progFileIn.value = "";
+    });
+  }
+
+  // Remove buttons for single image inputs
   [
     { buttonId: "btn-remove-hero-image", inputId: "hero-image", fileInputId: "hero-image-file" },
     { buttonId: "btn-remove-about-image", inputId: "about-image", fileInputId: "about-image-file" },
-    { buttonId: "btn-remove-cardapio-image", inputId: "cardapio-image", fileInputId: "cardapio-image-file" },
-    { buttonId: "btn-remove-programa-image", inputId: "programa-image", fileInputId: "programa-image-file" },
     { buttonId: "btn-remove-destaque-shake-image", inputId: "destaque-shake-image", fileInputId: "destaque-shake-image-file" },
     { buttonId: "btn-remove-destaque-waffle-image", inputId: "destaque-waffle-image", fileInputId: "destaque-waffle-image-file" },
     { buttonId: "btn-remove-destaque-sopa-image", inputId: "destaque-sopa-image", fileInputId: "destaque-sopa-image-file" },

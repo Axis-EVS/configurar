@@ -314,8 +314,9 @@
                                 <div class="space-y-1">
                                     <label class="block text-xs font-bold text-slate-300" for="cardapio-category">Categoria</label>
                                     <select id="cardapio-category" class="w-full bg-panel-input border border-panel-border text-white text-xs font-semibold rounded-xl px-3 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" required>
-                                        <option value="Nutrição">🥗 Nutrição & Refeição</option>
-                                        <option value="Bebidas">🍹 Bebidas & Chás</option>
+                                        <option value="Nutrição">🥗 Nutrição</option>
+                                        <option value="Bebidas">🍹 Bebidas</option>
+                                        <option value="Produtos Fechados">📦 Produtos Fechados</option>
                                     </select>
                                 </div>
                                 <div class="space-y-1">
@@ -361,29 +362,28 @@
                                 </div>
                             </div>
 
-                            <!-- Photo Upload Zone (Drag & Drop) -->
+                            <!-- Photo Upload Zone (Drag & Drop - Multiple Images) -->
                             <div class="space-y-1">
-                                <label class="block text-xs font-bold text-slate-300">Foto do Produto (PNG / JPG / WebP)</label>
+                                <label class="block text-xs font-bold text-slate-300">Galeria de Fotos do Produto (Múltiplas Fotos)</label>
                                 <input id="cardapio-image" type="hidden"/>
                                 
                                 <div id="cardapio-dropzone" class="border-2 border-dashed border-panel-border hover:border-brand-500/50 bg-panel-input rounded-2xl p-4 text-center cursor-pointer transition-all">
-                                    <input class="hidden" id="cardapio-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/jpg"/>
+                                    <input class="hidden" id="cardapio-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/jpg" multiple/>
                                     <div class="flex flex-col items-center justify-center gap-1.5">
                                         <span class="material-symbols-outlined text-2xl text-emerald-400">cloud_upload</span>
-                                        <p class="text-xs font-bold text-slate-200">Arraste a foto aqui ou clique para selecionar</p>
-                                        <p class="text-[11px] text-slate-400">Máx. 5MB • Formato completo sem cortes</p>
+                                        <p class="text-xs font-bold text-slate-200">Arraste uma ou mais fotos aqui ou clique para selecionar</p>
+                                        <p class="text-[11px] text-slate-400">Envie várias fotos • A 1ª foto será a capa principal no cardápio</p>
                                     </div>
                                 </div>
                                 <span id="cardapio-upload-status" class="text-xs text-slate-400 mt-1 block"></span>
 
-                                <!-- Preview -->
-                                <div id="cardapio-preview-wrapper" class="mt-2 flex items-center gap-4 hidden">
-                                    <div class="w-20 h-20 rounded-xl bg-panel-card border border-panel-border p-1 overflow-hidden flex items-center justify-center shrink-0">
-                                        <img id="cardapio-image-preview" src="" class="w-full h-full object-contain" alt="Prévia do Produto"/>
+                                <!-- Multi-Image Gallery Container -->
+                                <div id="cardapio-gallery-container" class="mt-2 space-y-2 hidden">
+                                    <div class="flex items-center justify-between text-[11px]">
+                                        <span id="cardapio-gallery-count" class="font-bold text-emerald-400">0 fotos adicionadas</span>
+                                        <span class="text-slate-400 text-[10px]">A 1ª foto é a capa exibida no cardápio</span>
                                     </div>
-                                    <button id="btn-remove-cardapio-image" type="button" class="text-xs font-bold text-red-400 hover:text-red-300 bg-red-950/30 hover:bg-red-950/60 px-3 py-1.5 rounded-lg border border-red-500/30 transition-colors">
-                                        Remover Foto
-                                    </button>
+                                    <div id="cardapio-gallery-list" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
                                 </div>
                             </div>
 
@@ -441,6 +441,7 @@
                                 <button class="btn-category-filter px-3 py-1.5 rounded-full text-xs font-bold bg-brand-500 text-white transition-all" data-cat="all">Todos</button>
                                 <button class="btn-category-filter px-3 py-1.5 rounded-full text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all" data-cat="Nutrição">🥗 Nutrição</button>
                                 <button class="btn-category-filter px-3 py-1.5 rounded-full text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all" data-cat="Bebidas">🍹 Bebidas</button>
+                                <button class="btn-category-filter px-3 py-1.5 rounded-full text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all" data-cat="Produtos Fechados">📦 Produtos Fechados</button>
                             </div>
                         </div>
 
@@ -537,28 +538,28 @@
                                 </div>
                             </div>
 
-                            <!-- Photo Upload Zone -->
+                            <!-- Photo Upload Zone (Drag & Drop - Multiple Images) -->
                             <div class="space-y-1">
-                                <label class="block text-xs font-bold text-slate-300">Capa do Programa (Opcional)</label>
+                                <label class="block text-xs font-bold text-slate-300">Galeria de Fotos do Programa (Múltiplas Fotos)</label>
                                 <input id="programa-image" type="hidden"/>
                                 
                                 <div id="programa-dropzone" class="border-2 border-dashed border-panel-border hover:border-brand-500/50 bg-panel-input rounded-2xl p-4 text-center cursor-pointer transition-all">
-                                    <input class="hidden" id="programa-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/jpg"/>
+                                    <input class="hidden" id="programa-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/jpg" multiple/>
                                     <div class="flex flex-col items-center justify-center gap-1.5">
                                         <span class="material-symbols-outlined text-2xl text-amber-400">cloud_upload</span>
-                                        <p class="text-xs font-bold text-slate-200">Arraste a capa aqui ou selecione</p>
+                                        <p class="text-xs font-bold text-slate-200">Arraste uma ou mais fotos aqui ou selecione</p>
+                                        <p class="text-[11px] text-slate-400">Envie várias fotos • A 1ª foto será a capa principal na vitrine</p>
                                     </div>
                                 </div>
                                 <span id="programa-upload-status" class="text-xs text-slate-400 mt-1 block"></span>
 
-                                <!-- Preview -->
-                                <div id="programa-preview-wrapper" class="mt-2 flex items-center gap-4 hidden">
-                                    <div class="w-20 h-20 rounded-xl bg-panel-card border border-panel-border p-1 overflow-hidden flex items-center justify-center shrink-0">
-                                        <img id="programa-image-preview" src="" class="w-full h-full object-contain" alt="Prévia do Programa"/>
+                                <!-- Multi-Image Gallery Container -->
+                                <div id="programa-gallery-container" class="mt-2 space-y-2 hidden">
+                                    <div class="flex items-center justify-between text-[11px]">
+                                        <span id="programa-gallery-count" class="font-bold text-amber-400">0 fotos adicionadas</span>
+                                        <span class="text-slate-400 text-[10px]">A 1ª foto é a capa exibida na vitrine</span>
                                     </div>
-                                    <button id="btn-remove-programa-image" type="button" class="text-xs font-bold text-red-400 hover:text-red-300 bg-red-950/30 hover:bg-red-950/60 px-3 py-1.5 rounded-lg border border-red-500/30 transition-colors">
-                                        Remover Capa
-                                    </button>
+                                    <div id="programa-gallery-list" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
                                 </div>
                             </div>
 
