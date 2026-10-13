@@ -93,6 +93,7 @@ let allCardapioItems = [];
 let allProgramasItems = [];
 let allCategoriesOrder = ["Nutrição", "Bebidas", "Produtos Fechados"];
 let currentCategoryFilter = "all";
+let currentTypeFilter = "all";
 let cardapioImages = [];
 let programaImages = [];
 
@@ -272,31 +273,88 @@ async function fetchCardapioItems() {
   }
 }
 
-async function moveCardapioItem(item, direction) {
-  const index = allCardapioItems.findIndex(i => i.id === item.id);
-  if (index === -1) return;
-  const targetIndex = direction === "up" ? index - 1 : index + 1;
-  if (targetIndex < 0 || targetIndex >= allCardapioItems.length) return;
+async function normalizeCategoryOrders(categoryToNormalize, silent = false) {
+  const categories = categoryToNormalize ? [categoryToNormalize] : allCategoriesOrder;
+  const updates = [];
 
-  const targetItem = allCardapioItems[targetIndex];
-  let currentOrder = Number(item.ordem != null ? item.ordem : index);
-  let targetOrder = Number(targetItem.ordem != null ? targetItem.ordem : targetIndex);
-  if (currentOrder === targetOrder) {
-    currentOrder = targetIndex;
-    targetOrder = index;
+  for (const cat of categories) {
+    // Group 1: Itens Individuais (subcategoria !== 'Combos')
+    const individuais = allCardapioItems
+      .filter(i => i.categoria === cat && i.subcategoria !== "Combos")
+      .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+
+    individuais.forEach((it, idx) => {
+      const targetOrd = idx + 1;
+      if (it.ordem !== targetOrd) {
+        it.ordem = targetOrd;
+        updates.push(supabaseApp.from("cardapio").update({ ordem: targetOrd }).eq("id", it.id));
+      }
+    });
+
+    // Group 2: Combos Especiais (subcategoria === 'Combos')
+    const combos = allCardapioItems
+      .filter(i => i.categoria === cat && i.subcategoria === "Combos")
+      .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+
+    combos.forEach((it, idx) => {
+      const targetOrd = idx + 1;
+      if (it.ordem !== targetOrd) {
+        it.ordem = targetOrd;
+        updates.push(supabaseApp.from("cardapio").update({ ordem: targetOrd }).eq("id", it.id));
+      }
+    });
   }
 
+  if (updates.length > 0) {
+    try {
+      await Promise.all(updates);
+      if (!silent) showToast("Sequências organizadas com sucesso (1, 2, 3...)!");
+      await fetchCardapioItems();
+    } catch (err) {
+      console.error("Erro ao normalizar sequências:", err);
+      if (!silent) showToast("Erro ao normalizar sequências: " + err.message, "error");
+    }
+  } else {
+    if (!silent) showToast("Sequências já estão perfeitamente organizadas (1, 2, 3...)!");
+    renderCardapioTable();
+  }
+}
+
+async function moveCardapioItem(item, direction) {
+  const isCombo = item.subcategoria === "Combos";
+  // Filter strictly by the same category AND tipagem (subcategoria)
+  const groupItems = allCardapioItems
+    .filter(i => i.categoria === item.categoria && (i.subcategoria === "Combos") === isCombo)
+    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+
+  const index = groupItems.findIndex(i => i.id === item.id);
+  if (index === -1) return;
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= groupItems.length) return;
+
+  // Swap in array
+  const temp = groupItems[index];
+  groupItems[index] = groupItems[targetIndex];
+  groupItems[targetIndex] = temp;
+
+  // Re-assign clean consecutive sequence 1..N
+  const updates = [];
+  groupItems.forEach((it, idx) => {
+    const newOrd = idx + 1;
+    if (it.ordem !== newOrd) {
+      it.ordem = newOrd;
+      updates.push(supabaseApp.from("cardapio").update({ ordem: newOrd }).eq("id", it.id));
+    }
+  });
+
   try {
-    const [res1, res2] = await Promise.all([
-      supabaseApp.from("cardapio").update({ ordem: targetOrder }).eq("id", item.id),
-      supabaseApp.from("cardapio").update({ ordem: currentOrder }).eq("id", targetItem.id)
-    ]);
-    if (res1.error) throw res1.error;
-    if (res2.error) throw res2.error;
-    showToast("Ordem do produto atualizada!");
+    if (updates.length > 0) {
+      await Promise.all(updates);
+    }
+    showToast(`Posição de "${item.nome}" atualizada para #${targetIndex + 1}!`);
     await fetchCardapioItems();
   } catch (err) {
-    console.error("Erro ao reordenar cardápio:", err);
+    console.error("Erro ao reordenar produto:", err);
     showToast("Erro ao reordenar produto: " + err.message, "error");
   }
 }
@@ -354,10 +412,114 @@ async function moveCategory(fromIndex, offset) {
   }
 }
 
+function renderCardapioRow(tbody, item, { isAllCategoryView, isFirst, isLast, displayOrder }) {
+  const tr = document.createElement("tr");
+  tr.className = "hover:bg-panel-hover/50 transition-colors border-b border-panel-border group";
+  
+  const priceFormatted = Number(item.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const isActive = item.status === "Ativo";
+  
+  const cardapioImgs = Array.isArray(item.imagens) && item.imagens.length > 0 ? item.imagens : (item.imagem_url ? [item.imagem_url] : []);
+  const cardapioCover = cardapioImgs[0] || item.imagem_url || "";
+  const hasMultipleCardapio = cardapioImgs.length > 1;
+
+  const thumbHtml = item.exibir_imagem && cardapioCover
+    ? `<div class="w-12 h-12 rounded-xl bg-panel-card border border-panel-border p-1 flex items-center justify-center shrink-0 relative">
+        <img class="w-full h-full object-contain" src="${escapeHtml(cardapioCover)}" alt="${escapeHtml(item.nome)}"/>
+        ${hasMultipleCardapio ? `<span class="absolute -bottom-1 -right-1 bg-brand-500 text-white text-[9px] font-extrabold px-1 rounded-full shadow leading-tight border border-panel-card" title="${cardapioImgs.length} fotos">+${cardapioImgs.length}</span>` : ""}
+      </div>`
+    : `<div class="w-12 h-12 rounded-xl bg-panel-input border border-panel-border flex items-center justify-center text-slate-500 shrink-0">
+        <span class="material-symbols-outlined text-lg">restaurant</span>
+      </div>`;
+
+  const statusBadge = isActive
+    ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-bold border border-emerald-500/20">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Ativo
+      </span>`
+    : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-400 text-[11px] font-bold border border-slate-500/20">
+        <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Rascunho
+      </span>`;
+
+  const isCombo = item.subcategoria === "Combos";
+  const subcatBadge = isCombo
+    ? `<span class="inline-flex items-center gap-1 text-[11px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">⭐ Combo Especial</span>`
+    : `<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 bg-panel-input px-2 py-0.5 rounded-md border border-panel-border">🍽️ Individual</span>`;
+
+  let orderCellContent = "";
+  if (isAllCategoryView) {
+    orderCellContent = `<span class="text-xs text-slate-500 font-bold px-2 py-1" title="Selecione uma categoria específica para organizar a sequência das ordens">—</span>`;
+  } else {
+    orderCellContent = `
+      <div class="inline-flex items-center gap-1 bg-panel-card border border-panel-border px-2 py-1 rounded-xl shadow-sm">
+        <span class="text-xs font-extrabold text-brand-400 font-mono">#${displayOrder}</span>
+        <div class="flex flex-col gap-0.5">
+          <button class="btn-order-up text-slate-400 hover:text-white disabled:opacity-20 leading-none p-0.5 transition-colors cursor-pointer" ${isFirst ? "disabled" : ""} title="Subir posição">
+            <span class="material-symbols-outlined text-[13px] leading-none">expand_less</span>
+          </button>
+          <button class="btn-order-down text-slate-400 hover:text-white disabled:opacity-20 leading-none p-0.5 transition-colors cursor-pointer" ${isLast ? "disabled" : ""} title="Descer posição">
+            <span class="material-symbols-outlined text-[13px] leading-none">expand_more</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  tr.innerHTML = `
+    <td class="p-3.5 text-center">
+      ${orderCellContent}
+    </td>
+    <td class="p-3.5 flex items-center gap-3">
+      ${thumbHtml}
+      <div>
+        <div class="text-white font-bold text-sm">${escapeHtml(item.nome)}</div>
+        <div class="mt-0.5">${subcatBadge}</div>
+      </div>
+    </td>
+    <td class="p-3.5 text-slate-300 font-semibold">${escapeHtml(item.categoria)}</td>
+    <td class="p-3.5 text-emerald-400 font-bold">${priceFormatted}</td>
+    <td class="p-3.5">${statusBadge}</td>
+    <td class="p-3.5 text-right">
+      <div class="flex items-center justify-end gap-1">
+        <button class="btn-edit-cardapio p-2 text-slate-400 hover:text-white hover:bg-panel-hover rounded-lg transition-colors cursor-pointer" title="Editar" data-id="${escapeHtml(String(item.id))}">
+          <span class="material-symbols-outlined text-lg">edit</span>
+        </button>
+        <button class="btn-duplicate-cardapio p-2 text-slate-400 hover:text-amber-400 hover:bg-amber-950/20 rounded-lg transition-colors cursor-pointer" title="Duplicar Item" data-id="${escapeHtml(String(item.id))}">
+          <span class="material-symbols-outlined text-lg">content_copy</span>
+        </button>
+        <button class="btn-delete-cardapio p-2 text-slate-400 hover:text-red-400 hover:bg-red-950/20 rounded-lg transition-colors cursor-pointer" title="Excluir" data-id="${escapeHtml(String(item.id))}">
+          <span class="material-symbols-outlined text-lg">delete</span>
+        </button>
+      </div>
+    </td>
+  `;
+
+  if (!isAllCategoryView) {
+    tr.querySelector(".btn-order-up")?.addEventListener("click", () => moveCardapioItem(item, "up"));
+    tr.querySelector(".btn-order-down")?.addEventListener("click", () => moveCardapioItem(item, "down"));
+  }
+  tr.querySelector(".btn-edit-cardapio")?.addEventListener("click", () => editCardapioItem(item));
+  tr.querySelector(".btn-duplicate-cardapio")?.addEventListener("click", () => duplicateCardapioItem(item));
+  tr.querySelector(".btn-delete-cardapio")?.addEventListener("click", () => {
+    deletingCardapioId = item.id;
+    modalDeleteCardapio.classList.remove("hidden");
+  });
+
+  tbody.appendChild(tr);
+}
+
 function renderCardapioTable() {
   const tbody = document.getElementById("cardapio-table-body");
   if (!tbody) return;
   tbody.innerHTML = "";
+
+  const typeFilterContainer = document.getElementById("type-filter-container");
+  if (typeFilterContainer) {
+    if (currentCategoryFilter === "all") {
+      typeFilterContainer.classList.add("hidden");
+    } else {
+      typeFilterContainer.classList.remove("hidden");
+    }
+  }
 
   const searchVal = (document.getElementById("cardapio-search")?.value || "").toLowerCase().trim();
   
@@ -368,8 +530,10 @@ function renderCardapioTable() {
       (item.subcategoria && item.subcategoria.toLowerCase().includes(searchVal));
     
     const matchCategory = currentCategoryFilter === "all" || item.categoria === currentCategoryFilter;
+    const matchType = currentTypeFilter === "all" || 
+      (currentTypeFilter === "Combos" ? item.subcategoria === "Combos" : item.subcategoria !== "Combos");
 
-    return matchSearch && matchCategory;
+    return matchSearch && matchCategory && matchType;
   });
 
   if (filtered.length === 0) {
@@ -377,91 +541,92 @@ function renderCardapioTable() {
     return;
   }
 
-  filtered.forEach((item, fIdx) => {
-    const tr = document.createElement("tr");
-    tr.className = "hover:bg-panel-hover/50 transition-colors border-b border-panel-border group";
-    
-    const priceFormatted = Number(item.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-    const isActive = item.status === "Ativo";
-    
-    const cardapioImgs = Array.isArray(item.imagens) && item.imagens.length > 0 ? item.imagens : (item.imagem_url ? [item.imagem_url] : []);
-    const cardapioCover = cardapioImgs[0] || item.imagem_url || "";
-    const hasMultipleCardapio = cardapioImgs.length > 1;
-
-    const thumbHtml = item.exibir_imagem && cardapioCover
-      ? `<div class="w-12 h-12 rounded-xl bg-panel-card border border-panel-border p-1 flex items-center justify-center shrink-0 relative">
-          <img class="w-full h-full object-contain" src="${escapeHtml(cardapioCover)}" alt="${escapeHtml(item.nome)}"/>
-          ${hasMultipleCardapio ? `<span class="absolute -bottom-1 -right-1 bg-brand-500 text-white text-[9px] font-extrabold px-1 rounded-full shadow leading-tight border border-panel-card" title="${cardapioImgs.length} fotos">+${cardapioImgs.length}</span>` : ""}
-        </div>`
-      : `<div class="w-12 h-12 rounded-xl bg-panel-input border border-panel-border flex items-center justify-center text-slate-500 shrink-0">
-          <span class="material-symbols-outlined text-lg">restaurant</span>
-        </div>`;
-
-    const statusBadge = isActive
-      ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-bold border border-emerald-500/20">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Ativo
-        </span>`
-      : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-500/10 text-slate-400 text-[11px] font-bold border border-slate-500/20">
-          <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Rascunho
-        </span>`;
-
-    const itemOrder = item.ordem != null ? item.ordem : 0;
-    const isFirst = fIdx === 0;
-    const isLast = fIdx === filtered.length - 1;
-
-    tr.innerHTML = `
-      <td class="p-3.5 text-center">
-        <div class="inline-flex items-center gap-1 bg-panel-card border border-panel-border px-2 py-1 rounded-xl">
-          <span class="text-xs font-extrabold text-brand-400 font-mono">#${itemOrder}</span>
-          <div class="flex flex-col gap-0.5">
-            <button class="btn-order-up text-slate-400 hover:text-white disabled:opacity-20 leading-none p-0.5 transition-colors" ${isFirst ? "disabled" : ""} title="Subir posição">
-              <span class="material-symbols-outlined text-[13px] leading-none">expand_less</span>
-            </button>
-            <button class="btn-order-down text-slate-400 hover:text-white disabled:opacity-20 leading-none p-0.5 transition-colors" ${isLast ? "disabled" : ""} title="Descer posição">
-              <span class="material-symbols-outlined text-[13px] leading-none">expand_more</span>
-            </button>
-          </div>
-        </div>
-      </td>
-      <td class="p-3.5 flex items-center gap-3">
-        ${thumbHtml}
-        <div>
-          <div class="text-white font-bold text-sm">${escapeHtml(item.nome)}</div>
-          <div class="text-slate-400 text-xs">${escapeHtml(item.subcategoria || "Individual")}</div>
-        </div>
-      </td>
-      <td class="p-3.5 text-slate-300 font-semibold">${escapeHtml(item.categoria)}</td>
-      <td class="p-3.5 text-emerald-400 font-bold">${priceFormatted}</td>
-      <td class="p-3.5">${statusBadge}</td>
-      <td class="p-3.5 text-right">
-        <div class="flex items-center justify-end gap-1">
-          <button class="btn-edit-cardapio p-2 text-slate-400 hover:text-white hover:bg-panel-hover rounded-lg transition-colors" title="Editar" data-id="${escapeHtml(String(item.id))}">
-            <span class="material-symbols-outlined text-lg">edit</span>
-          </button>
-          <button class="btn-duplicate-cardapio p-2 text-slate-400 hover:text-amber-400 hover:bg-amber-950/20 rounded-lg transition-colors" title="Duplicar Item" data-id="${escapeHtml(String(item.id))}">
-            <span class="material-symbols-outlined text-lg">content_copy</span>
-          </button>
-          <button class="btn-delete-cardapio p-2 text-slate-400 hover:text-red-400 hover:bg-red-950/20 rounded-lg transition-colors" title="Excluir" data-id="${escapeHtml(String(item.id))}">
-            <span class="material-symbols-outlined text-lg">delete</span>
-          </button>
-        </div>
-      </td>
-    `;
-
-    tr.querySelector(".btn-order-up")?.addEventListener("click", () => moveCardapioItem(item, "up"));
-    tr.querySelector(".btn-order-down")?.addEventListener("click", () => moveCardapioItem(item, "down"));
-    tr.querySelector(".btn-edit-cardapio").addEventListener("click", () => editCardapioItem(item));
-    tr.querySelector(".btn-duplicate-cardapio").addEventListener("click", () => duplicateCardapioItem(item));
-    tr.querySelector(".btn-delete-cardapio").addEventListener("click", () => {
-      deletingCardapioId = item.id;
-      modalDeleteCardapio.classList.remove("hidden");
+  // Visualização de "Todos": não exibe controles de ordem e agrupa pela ordem das categorias
+  if (currentCategoryFilter === "all") {
+    filtered.sort((a, b) => {
+      const catA = allCategoriesOrder.indexOf(a.categoria);
+      const catB = allCategoriesOrder.indexOf(b.categoria);
+      if (catA !== catB) return (catA === -1 ? 99 : catA) - (catB === -1 ? 99 : catB);
+      const isCombA = a.subcategoria === "Combos" ? 1 : 0;
+      const isCombB = b.subcategoria === "Combos" ? 1 : 0;
+      if (isCombA !== isCombB) return isCombA - isCombB;
+      return (Number(a.ordem) || 0) - (Number(b.ordem) || 0);
     });
 
-    tbody.appendChild(tr);
-  });
+    filtered.forEach(item => {
+      renderCardapioRow(tbody, item, { isAllCategoryView: true });
+    });
+    return;
+  }
+
+  // Visualização de categoria específica: agrupa e ordena estritamente por tipagem
+  const individuais = filtered.filter(i => i.subcategoria !== "Combos")
+    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+  const combos = filtered.filter(i => i.subcategoria === "Combos")
+    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+
+  if (currentTypeFilter === "all") {
+    if (individuais.length > 0) {
+      if (combos.length > 0) {
+        const headerTr = document.createElement("tr");
+        headerTr.className = "bg-panel-input/50 border-y border-panel-border";
+        headerTr.innerHTML = `
+          <td colspan="6" class="px-4 py-2 text-[11px] font-extrabold uppercase tracking-wider text-brand-400">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm">restaurant</span>
+              <span>🍽️ Itens Individuais (${individuais.length} itens)</span>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(headerTr);
+      }
+      individuais.forEach((item, idx) => {
+        renderCardapioRow(tbody, item, {
+          isAllCategoryView: false,
+          isFirst: idx === 0,
+          isLast: idx === individuais.length - 1,
+          displayOrder: item.ordem != null ? item.ordem : (idx + 1)
+        });
+      });
+    }
+
+    if (combos.length > 0) {
+      if (individuais.length > 0) {
+        const headerTr = document.createElement("tr");
+        headerTr.className = "bg-panel-input/50 border-y border-panel-border";
+        headerTr.innerHTML = `
+          <td colspan="6" class="px-4 py-2 text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-sm">stars</span>
+              <span>⭐ Combos Especiais (${combos.length} itens)</span>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(headerTr);
+      }
+      combos.forEach((item, idx) => {
+        renderCardapioRow(tbody, item, {
+          isAllCategoryView: false,
+          isFirst: idx === 0,
+          isLast: idx === combos.length - 1,
+          displayOrder: item.ordem != null ? item.ordem : (idx + 1)
+        });
+      });
+    }
+  } else {
+    const list = currentTypeFilter === "Combos" ? combos : individuais;
+    list.forEach((item, idx) => {
+      renderCardapioRow(tbody, item, {
+        isAllCategoryView: false,
+        isFirst: idx === 0,
+        isLast: idx === list.length - 1,
+        displayOrder: item.ordem != null ? item.ordem : (idx + 1)
+      });
+    });
+  }
 }
 
-// Category filter buttons
+// Filtros de Categoria
 document.querySelectorAll(".btn-category-filter").forEach(btn => {
   btn.addEventListener("click", function() {
     document.querySelectorAll(".btn-category-filter").forEach(b => {
@@ -469,8 +634,38 @@ document.querySelectorAll(".btn-category-filter").forEach(btn => {
     });
     this.className = "btn-category-filter px-3 py-1.5 rounded-full text-xs font-bold bg-brand-500 text-white transition-all";
     currentCategoryFilter = this.getAttribute("data-cat");
+
+    // Reseta o filtro de tipo ao trocar de categoria
+    currentTypeFilter = "all";
+    document.querySelectorAll(".btn-type-filter").forEach(tb => {
+      tb.className = tb.getAttribute("data-type") === "all"
+        ? "btn-type-filter px-2.5 py-1 rounded-lg text-xs font-bold bg-brand-500 text-white transition-all"
+        : "btn-type-filter px-2.5 py-1 rounded-lg text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all";
+    });
+
     renderCardapioTable();
   });
+});
+
+// Filtros de Tipagem (Item Individual vs Combo)
+document.querySelectorAll(".btn-type-filter").forEach(btn => {
+  btn.addEventListener("click", function() {
+    document.querySelectorAll(".btn-type-filter").forEach(b => {
+      b.className = "btn-type-filter px-2.5 py-1 rounded-lg text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all";
+    });
+    this.className = "btn-type-filter px-2.5 py-1 rounded-lg text-xs font-bold bg-brand-500 text-white transition-all";
+    currentTypeFilter = this.getAttribute("data-type");
+    renderCardapioTable();
+  });
+});
+
+// Botão de Normalizar Sequência (1, 2, 3...)
+document.getElementById("btn-normalize-category-orders")?.addEventListener("click", () => {
+  if (currentCategoryFilter !== "all") {
+    normalizeCategoryOrders(currentCategoryFilter);
+  } else {
+    normalizeCategoryOrders(null);
+  }
 });
 
 document.getElementById("cardapio-search")?.addEventListener("input", renderCardapioTable);
@@ -496,9 +691,8 @@ function editCardapioItem(t) {
   const btn = document.getElementById("btn-submit-cardapio");
   if (btn) btn.textContent = "Salvar Alterações";
   
-  if (window.innerWidth < 1024) {
-    document.getElementById("cardapio-form")?.scrollIntoView({ behavior: "smooth" });
-  }
+  // Rolagem suave e fluida garantida em qualquer resolução (desktop e mobile)
+  document.getElementById("cardapio-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function duplicateCardapioItem(t) {
@@ -506,11 +700,18 @@ function duplicateCardapioItem(t) {
   document.getElementById("cardapio-id").value = "";
   document.getElementById("cardapio-category").value = t.categoria;
   document.getElementById("cardapio-subcategory").value = t.subcategoria || "Produtos";
-  document.getElementById("cardapio-name").value = `[Cópia] ${t.nome}`;
+  // Nome idêntico ao original, SEM o prefixo [Cópia]
+  document.getElementById("cardapio-name").value = t.nome;
   document.getElementById("cardapio-price").value = t.preco;
+  
+  // Calcula a próxima ordem livre dentro daquela categoria e tipagem
+  const isCombo = t.subcategoria === "Combos";
+  const sameGroup = allCardapioItems.filter(i => i.categoria === t.categoria && (i.subcategoria === "Combos") === isCombo);
+  const maxOrd = sameGroup.reduce((max, i) => Math.max(max, Number(i.ordem) || 0), 0);
   if (document.getElementById("cardapio-order")) {
-    document.getElementById("cardapio-order").value = (t.ordem != null ? t.ordem : 0) + 1;
+    document.getElementById("cardapio-order").value = String(maxOrd + 1);
   }
+
   document.getElementById("cardapio-status").checked = true;
   cardapioImages = Array.isArray(t.imagens) && t.imagens.length > 0 ? [...t.imagens] : (t.imagem_url ? [t.imagem_url] : []);
   renderCardapioGallery();
@@ -522,17 +723,25 @@ function duplicateCardapioItem(t) {
   const btn = document.getElementById("btn-submit-cardapio");
   if (btn) btn.textContent = "Salvar como Novo Item";
 
-  showToast("Item duplicado no formulário. Faça seus ajustes e clique em Salvar!");
-  document.getElementById("cardapio-form")?.scrollIntoView({ behavior: "smooth" });
+  showToast("Item duplicado no formulário. Altere as informações necessárias antes de salvar!");
+  document.getElementById("cardapio-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function clearCardapioForm() {
   editingCardapioId = null;
   formCardapio.reset();
   document.getElementById("cardapio-id").value = "";
+  
+  // Próxima ordem automática para o novo item
+  const cat = document.getElementById("cardapio-category")?.value || "Nutrição";
+  const sub = document.getElementById("cardapio-subcategory")?.value || "Produtos";
+  const isCombo = sub === "Combos";
+  const sameGroup = allCardapioItems.filter(i => i.categoria === cat && (i.subcategoria === "Combos") === isCombo);
+  const maxOrd = sameGroup.reduce((max, i) => Math.max(max, Number(i.ordem) || 0), 0);
   if (document.getElementById("cardapio-order")) {
-    document.getElementById("cardapio-order").value = "0";
+    document.getElementById("cardapio-order").value = String(maxOrd + 1);
   }
+
   cardapioImages = [];
   renderCardapioGallery();
   const t = document.getElementById("cardapio-upload-status");
@@ -542,6 +751,33 @@ function clearCardapioForm() {
   const btn = document.getElementById("btn-submit-cardapio");
   if (btn) btn.textContent = "Salvar Item";
 }
+
+// Ao alterar categoria ou subcategoria no formulário de novo item, atualiza a ordem sugerida
+document.getElementById("cardapio-category")?.addEventListener("change", () => {
+  if (!editingCardapioId) {
+    const cat = document.getElementById("cardapio-category").value;
+    const sub = document.getElementById("cardapio-subcategory").value;
+    const isCombo = sub === "Combos";
+    const sameGroup = allCardapioItems.filter(i => i.categoria === cat && (i.subcategoria === "Combos") === isCombo);
+    const maxOrd = sameGroup.reduce((max, i) => Math.max(max, Number(i.ordem) || 0), 0);
+    if (document.getElementById("cardapio-order")) {
+      document.getElementById("cardapio-order").value = String(maxOrd + 1);
+    }
+  }
+});
+
+document.getElementById("cardapio-subcategory")?.addEventListener("change", () => {
+  if (!editingCardapioId) {
+    const cat = document.getElementById("cardapio-category").value;
+    const sub = document.getElementById("cardapio-subcategory").value;
+    const isCombo = sub === "Combos";
+    const sameGroup = allCardapioItems.filter(i => i.categoria === cat && (i.subcategoria === "Combos") === isCombo);
+    const maxOrd = sameGroup.reduce((max, i) => Math.max(max, Number(i.ordem) || 0), 0);
+    if (document.getElementById("cardapio-order")) {
+      document.getElementById("cardapio-order").value = String(maxOrd + 1);
+    }
+  }
+});
 
 if (formCardapio) {
   formCardapio.addEventListener("submit", async t => {
@@ -562,6 +798,21 @@ if (formCardapio) {
       beneficios: benefits
     };
 
+    // Verificação de duplicação: impede salvar produto com mesmo nome, categoria, tipo e preço idênticos
+    const duplicate = allCardapioItems.find(item => {
+      if (editingCardapioId && item.id === editingCardapioId) return false;
+      const sameName = (item.nome || "").trim().toLowerCase() === payload.nome.toLowerCase();
+      const sameCat = (item.categoria || "") === payload.categoria;
+      const sameSub = (item.subcategoria || "Produtos") === payload.subcategoria;
+      const samePrice = Math.abs(Number(item.preco || 0) - Number(payload.preco || 0)) < 0.001;
+      return sameName && sameCat && sameSub && samePrice;
+    });
+
+    if (duplicate) {
+      showToast("Este item já está cadastrado com as mesmas informações (Nome, Categoria, Tipo e Preço). Modifique os dados antes de salvar.", "error");
+      return;
+    }
+
     try {
       if (editingCardapioId) {
         const { error: n } = await supabaseApp.from("cardapio").update(payload).eq("id", editingCardapioId);
@@ -573,7 +824,7 @@ if (formCardapio) {
         showToast("Novo item cadastrado no cardápio!");
       }
       clearCardapioForm();
-      fetchCardapioItems();
+      await fetchCardapioItems();
     } catch (n) {
       console.error("Error saving product:", n);
       alert("Erro ao salvar produto: " + n.message);
@@ -776,9 +1027,7 @@ function editProgramaItem(t) {
   const btn = document.getElementById("btn-submit-programa");
   if (btn) btn.textContent = "Salvar Alterações";
 
-  if (window.innerWidth < 1024) {
-    document.getElementById("programa-form")?.scrollIntoView({ behavior: "smooth" });
-  }
+  document.getElementById("programa-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function clearProgramaForm() {

@@ -5,6 +5,10 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Painel Administrativo CMS — AXIS EVS</title>
     
+    <!-- Favicon / Ícone da Aba -->
+    <link rel="icon" type="image/png" href="./assets/logo-nGs2Iwky.png"/>
+    <link rel="apple-touch-icon" href="./assets/logo-nGs2Iwky.png"/>
+    
     <!-- Google Fonts: Plus Jakarta Sans & Playfair Display -->
     <link rel="preconnect" href="https://fonts.googleapis.com"/>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -397,8 +401,11 @@
 
                             <!-- Benefits -->
                             <div class="space-y-1">
-                                <label class="block text-xs font-bold text-slate-300" for="cardapio-benefits">Benefícios Nutricionais (Separados por ponto e vírgula ';')</label>
-                                <textarea id="cardapio-benefits" class="w-full bg-panel-input border border-panel-border text-white text-xs rounded-xl px-3 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none resize-none placeholder-slate-500" placeholder="Ex: 24g de Proteína; 23 Vitaminas e Minerais; Zero Açúcar Refinado" rows="2"></textarea>
+                                <div class="flex items-center justify-between">
+                                    <label class="block text-xs font-bold text-slate-300" for="cardapio-benefits">Benefícios Nutricionais (Separados por ponto e vírgula ';')</label>
+                                    <span class="text-[10px] text-slate-500 font-semibold">Campo expandido para fácil digitação</span>
+                                </div>
+                                <textarea id="cardapio-benefits" class="w-full bg-panel-input border border-panel-border text-white text-sm rounded-xl px-4 py-3 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none resize-y placeholder-slate-500 min-h-[110px] leading-relaxed" placeholder="Ex: 24g de Proteína; 23 Vitaminas e Minerais; Zero Açúcar Refinado" rows="4"></textarea>
                             </div>
 
                             <!-- Action Buttons -->
@@ -442,6 +449,22 @@
                                 <button class="btn-category-filter px-3 py-1.5 rounded-full text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all" data-cat="Nutrição">🥗 Nutrição</button>
                                 <button class="btn-category-filter px-3 py-1.5 rounded-full text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all" data-cat="Bebidas">🍹 Bebidas</button>
                                 <button class="btn-category-filter px-3 py-1.5 rounded-full text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all" data-cat="Produtos Fechados">📦 Produtos Fechados</button>
+                            </div>
+
+                            <!-- Type / Subcategory Filter Chips & Order Organizer (Visible when category is selected) -->
+                            <div class="flex flex-wrap items-center justify-between gap-2 pt-1 hidden" id="type-filter-container">
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 mr-1">
+                                        <span class="material-symbols-outlined text-sm text-brand-400">tune</span> Tipo:
+                                    </span>
+                                    <button class="btn-type-filter px-2.5 py-1 rounded-lg text-xs font-bold bg-brand-500 text-white transition-all" data-type="all">Todos os Tipos</button>
+                                    <button class="btn-type-filter px-2.5 py-1 rounded-lg text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all" data-type="Produtos">🍽️ Itens Individuais</button>
+                                    <button class="btn-type-filter px-2.5 py-1 rounded-lg text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all" data-type="Combos">⭐ Combos Especiais</button>
+                                </div>
+                                <button id="btn-normalize-category-orders" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-brand-400 bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 transition-all cursor-pointer shadow-sm active:scale-95" type="button" title="Organizar sequências desta categoria estritamente em 1, 2, 3... sem saltos e sem duplicidades">
+                                    <span class="material-symbols-outlined text-xs">auto_fix_high</span>
+                                    <span>Organizar Sequência (1, 2, 3...)</span>
+                                </button>
                             </div>
                         </div>
 
@@ -579,8 +602,11 @@
 
                             <!-- Benefits -->
                             <div class="space-y-1">
-                                <label class="block text-xs font-bold text-slate-300" for="programa-benefits">Inclusões do Plano (Separadas por ponto e vírgula ';')</label>
-                                <textarea id="programa-benefits" class="w-full bg-panel-input border border-panel-border text-white text-xs rounded-xl px-3 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none resize-none placeholder-slate-500" placeholder="Ex: 2 Avaliações de Bioimpedância; Guia de Refeições; Suporte VIP no WhatsApp" rows="3"></textarea>
+                                <div class="flex items-center justify-between">
+                                    <label class="block text-xs font-bold text-slate-300" for="programa-benefits">Inclusões do Plano (Separadas por ponto e vírgula ';')</label>
+                                    <span class="text-[10px] text-slate-500 font-semibold">Campo expandido para fácil digitação</span>
+                                </div>
+                                <textarea id="programa-benefits" class="w-full bg-panel-input border border-panel-border text-white text-sm rounded-xl px-4 py-3 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none resize-y placeholder-slate-500 min-h-[110px] leading-relaxed" placeholder="Ex: 2 Avaliações de Bioimpedância; Guia de Refeições; Suporte VIP no WhatsApp" rows="4"></textarea>
                             </div>
 
                             <!-- Action Buttons -->
