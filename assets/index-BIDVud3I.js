@@ -894,6 +894,27 @@ async function fetchEspacoInfo() {
       setFormImagePreview("destaque-cha-image", t.imagem_destaque_cha || "");
 
       if (document.getElementById("footer-instagram")) document.getElementById("footer-instagram").value = t.url_instagram || "";
+
+      // Contato & WhatsApp
+      if (document.getElementById("espaco-whatsapp")) document.getElementById("espaco-whatsapp").value = t.whatsapp_numero || "";
+      if (document.getElementById("espaco-whatsapp-msg")) document.getElementById("espaco-whatsapp-msg").value = t.whatsapp_mensagem || "";
+
+      // Localização & Endereço
+      if (document.getElementById("espaco-nome")) document.getElementById("espaco-nome").value = t.nome_espaco || "";
+      if (document.getElementById("espaco-endereco")) document.getElementById("espaco-endereco").value = t.endereco || "";
+      if (document.getElementById("espaco-bairro")) document.getElementById("espaco-bairro").value = t.bairro || "";
+      if (document.getElementById("espaco-cidade")) document.getElementById("espaco-cidade").value = t.cidade_uf_cep || "";
+      if (document.getElementById("espaco-maps")) document.getElementById("espaco-maps").value = t.url_maps || "";
+
+      // Horários & Atividades
+      if (document.getElementById("horario-seg-sex")) document.getElementById("horario-seg-sex").value = t.horario_seg_sex || "";
+      if (document.getElementById("atividades-seg-sex")) document.getElementById("atividades-seg-sex").value = t.atividades_seg_sex || "";
+      if (document.getElementById("horario-sab")) document.getElementById("horario-sab").value = t.horario_sab || "";
+      if (document.getElementById("atividades-sab")) document.getElementById("atividades-sab").value = t.atividades_sab || "";
+      if (document.getElementById("horario-dom")) document.getElementById("horario-dom").value = t.horario_dom || "";
+      if (document.getElementById("atividades-dom")) document.getElementById("atividades-dom").value = t.atividades_dom || "";
+      if (document.getElementById("horario-retirada")) document.getElementById("horario-retirada").value = t.horario_retirada || "";
+      if (document.getElementById("atividades-retirada")) document.getElementById("atividades-retirada").value = t.atividades_retirada || "";
     } else {
       renderCategoryOrderControls();
     }
@@ -914,7 +935,7 @@ async function saveEspacoInfo(t) {
       s = await supabaseApp.from("empresa").insert([t]);
     }
     if (s.error) throw s.error;
-    showToast("Informações e fotos do espaço atualizadas com sucesso!");
+    showToast("Informações do espaço, contatos e horários atualizados com sucesso!");
     fetchEspacoInfo();
   } catch (e) {
     console.error("Error saving home configuration:", e);
@@ -937,7 +958,22 @@ if (formEspaco) {
       imagem_destaque_waffle: document.getElementById("destaque-waffle-image")?.value || "",
       imagem_destaque_sopa: document.getElementById("destaque-sopa-image")?.value || "",
       imagem_destaque_cha: document.getElementById("destaque-cha-image")?.value || "",
-      url_instagram: document.getElementById("footer-instagram")?.value || ""
+      url_instagram: document.getElementById("footer-instagram")?.value || "",
+      whatsapp_numero: document.getElementById("espaco-whatsapp")?.value?.trim() || "5512991055041",
+      whatsapp_mensagem: document.getElementById("espaco-whatsapp-msg")?.value?.trim() || "Olá! Quero saber mais sobre a AXIS EVS.",
+      nome_espaco: document.getElementById("espaco-nome")?.value?.trim() || "Axis Evs - Espaço Herbalife Satélite",
+      endereco: document.getElementById("espaco-endereco")?.value?.trim() || "Av. Cassiopeia, 438",
+      bairro: document.getElementById("espaco-bairro")?.value?.trim() || "Jardim Satélite",
+      cidade_uf_cep: document.getElementById("espaco-cidade")?.value?.trim() || "São José dos Campos - SP, 12230-010",
+      url_maps: document.getElementById("espaco-maps")?.value?.trim() || "https://maps.app.goo.gl/LqK4GHygV2koL99Q9?g_st=ac",
+      horario_seg_sex: document.getElementById("horario-seg-sex")?.value?.trim() || "10h00 às 17h00",
+      atividades_seg_sex: document.getElementById("atividades-seg-sex")?.value?.trim() || "Atendimento personalizado, almoço saudável e avaliações físicas.",
+      horario_sab: document.getElementById("horario-sab")?.value?.trim() || "10h00 às 14h00",
+      atividades_sab: document.getElementById("atividades-sab")?.value?.trim() || "Degustações gourmet e encontros da nossa comunidade.",
+      horario_dom: document.getElementById("horario-dom")?.value?.trim() || "Fechado",
+      atividades_dom: document.getElementById("atividades-dom")?.value?.trim() || "Fechado presencialmente aos domingos e feriados. Atendimento online via WhatsApp.",
+      horario_retirada: document.getElementById("horario-retirada")?.value?.trim() || "Horário normal de expediente",
+      atividades_retirada: document.getElementById("atividades-retirada")?.value?.trim() || "Retirada de kits e pedidos express sem espera."
     };
     saveEspacoInfo(payload);
   });

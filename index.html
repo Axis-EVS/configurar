@@ -833,10 +833,162 @@
                         </div>
                     </div>
 
+                    <!-- Section 5: Contato Oficial & WhatsApp -->
+                    <div class="space-y-4">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-panel-border pb-3">
+                            <span class="material-symbols-outlined text-emerald-400">chat</span>
+                            <span>Canais de Atendimento & WhatsApp</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">
+                            Configure o número de WhatsApp principal. Ele será sincronizado automaticamente em todos os botões da vitrine (header, contato, rodapé, pedidos de cardápio e planos).
+                        </p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="space-y-1">
+                                <label class="block text-xs font-bold text-slate-300" for="espaco-whatsapp">Número do WhatsApp (com DDD)</label>
+                                <div class="relative">
+                                    <span class="material-symbols-outlined absolute left-3.5 top-2.5 text-emerald-400 text-lg">phone_android</span>
+                                    <input id="espaco-whatsapp" class="w-full bg-panel-input border border-panel-border text-white text-sm rounded-xl pl-11 pr-4 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none placeholder-slate-500" placeholder="(12) 99105-5041" type="text"/>
+                                </div>
+                                <span class="text-[11px] text-slate-500 block">Ex: (12) 99105-5041 ou 12991055041</span>
+                            </div>
+
+                            <div class="space-y-1">
+                                <label class="block text-xs font-bold text-slate-300" for="espaco-whatsapp-msg">Mensagem Padrão de Início</label>
+                                <input id="espaco-whatsapp-msg" class="w-full bg-panel-input border border-panel-border text-white text-xs rounded-xl px-4 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none placeholder-slate-500" placeholder="Olá! Quero saber mais sobre a AXIS EVS." type="text"/>
+                                <span class="text-[11px] text-slate-500 block">Mensagem pré-preenchida enviada ao clicar em contato geral</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 6: Localização & Endereço -->
+                    <div class="space-y-4">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-panel-border pb-3">
+                            <span class="material-symbols-outlined text-emerald-400">location_on</span>
+                            <span>Localização & Endereço do Espaço</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">
+                            Essas informações são refletidas no card de atendimento da vitrine e nos metadados de Inteligência Artificial e Google Meu Negócio.
+                        </p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="space-y-1 sm:col-span-2">
+                                <label class="block text-xs font-bold text-slate-300" for="espaco-nome">Nome Oficial do Espaço / Fachada</label>
+                                <input id="espaco-nome" class="w-full bg-panel-input border border-panel-border text-white text-sm rounded-xl px-4 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none placeholder-slate-500" placeholder="Axis Evs - Espaço Herbalife Satélite" type="text"/>
+                            </div>
+
+                            <div class="space-y-1">
+                                <label class="block text-xs font-bold text-slate-300" for="espaco-endereco">Logradouro e Número</label>
+                                <input id="espaco-endereco" class="w-full bg-panel-input border border-panel-border text-white text-xs rounded-xl px-4 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none placeholder-slate-500" placeholder="Av. Cassiopeia, 438" type="text"/>
+                            </div>
+
+                            <div class="space-y-1">
+                                <label class="block text-xs font-bold text-slate-300" for="espaco-bairro">Bairro</label>
+                                <input id="espaco-bairro" class="w-full bg-panel-input border border-panel-border text-white text-xs rounded-xl px-4 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none placeholder-slate-500" placeholder="Jardim Satélite" type="text"/>
+                            </div>
+
+                            <div class="space-y-1">
+                                <label class="block text-xs font-bold text-slate-300" for="espaco-cidade">Cidade, Estado e CEP</label>
+                                <input id="espaco-cidade" class="w-full bg-panel-input border border-panel-border text-white text-xs rounded-xl px-4 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none placeholder-slate-500" placeholder="São José dos Campos - SP, 12230-010" type="text"/>
+                            </div>
+
+                            <div class="space-y-1">
+                                <label class="block text-xs font-bold text-slate-300" for="espaco-maps">Link Oficial do Google Maps (Rota)</label>
+                                <input id="espaco-maps" class="w-full bg-panel-input border border-panel-border text-white text-xs rounded-xl px-4 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none placeholder-slate-500" placeholder="https://maps.app.goo.gl/..." type="url"/>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 7: Tabela de Horários de Atendimento Presencial -->
+                    <div class="space-y-4">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2 border-b border-panel-border pb-3">
+                            <span class="material-symbols-outlined text-amber-400">schedule</span>
+                            <span>Tabela de Horários de Atendimento Presencial</span>
+                        </h3>
+                        <p class="text-xs text-slate-400">
+                            Configure os horários e atividades para cada dia da semana. Estas informações alimentam a tabela visual da vitrine e são lidas por assistentes de IA e Google Search.
+                        </p>
+
+                        <div class="space-y-4 bg-panel-input/50 p-4 sm:p-5 rounded-2xl border border-panel-border">
+                            <!-- Segunda a Sexta -->
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 pb-3 border-b border-panel-border/60 items-center">
+                                <div class="md:col-span-3">
+                                    <span class="text-xs font-bold text-white flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-brand-500"></span>
+                                        Segunda a Sexta
+                                    </span>
+                                </div>
+                                <div class="md:col-span-3">
+                                    <label class="block text-[11px] font-semibold text-slate-400 mb-1" for="horario-seg-sex">Horário de Funcionamento</label>
+                                    <input id="horario-seg-sex" class="w-full bg-panel-surface border border-panel-border text-white text-xs rounded-xl px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" placeholder="10h00 às 17h00" type="text"/>
+                                </div>
+                                <div class="md:col-span-6">
+                                    <label class="block text-[11px] font-semibold text-slate-400 mb-1" for="atividades-seg-sex">Atividades e Serviços Realizados</label>
+                                    <input id="atividades-seg-sex" class="w-full bg-panel-surface border border-panel-border text-white text-xs rounded-xl px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" placeholder="Atendimento personalizado, almoço saudável e avaliações físicas." type="text"/>
+                                </div>
+                            </div>
+
+                            <!-- Sábado -->
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 pb-3 border-b border-panel-border/60 items-center">
+                                <div class="md:col-span-3">
+                                    <span class="text-xs font-bold text-white flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-gold-500"></span>
+                                        Sábado
+                                    </span>
+                                </div>
+                                <div class="md:col-span-3">
+                                    <label class="block text-[11px] font-semibold text-slate-400 mb-1" for="horario-sab">Horário de Funcionamento</label>
+                                    <input id="horario-sab" class="w-full bg-panel-surface border border-panel-border text-white text-xs rounded-xl px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" placeholder="10h00 às 14h00" type="text"/>
+                                </div>
+                                <div class="md:col-span-6">
+                                    <label class="block text-[11px] font-semibold text-slate-400 mb-1" for="atividades-sab">Atividades e Serviços Realizados</label>
+                                    <input id="atividades-sab" class="w-full bg-panel-surface border border-panel-border text-white text-xs rounded-xl px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" placeholder="Degustações gourmet e encontros da nossa comunidade." type="text"/>
+                                </div>
+                            </div>
+
+                            <!-- Domingo & Feriados -->
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 pb-3 border-b border-panel-border/60 items-center">
+                                <div class="md:col-span-3">
+                                    <span class="text-xs font-bold text-white flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                                        Domingo & Feriados
+                                    </span>
+                                </div>
+                                <div class="md:col-span-3">
+                                    <label class="block text-[11px] font-semibold text-slate-400 mb-1" for="horario-dom">Horário / Status</label>
+                                    <input id="horario-dom" class="w-full bg-panel-surface border border-panel-border text-white text-xs rounded-xl px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" placeholder="Fechado" type="text"/>
+                                </div>
+                                <div class="md:col-span-6">
+                                    <label class="block text-[11px] font-semibold text-slate-400 mb-1" for="atividades-dom">Atividades e Serviços Realizados</label>
+                                    <input id="atividades-dom" class="w-full bg-panel-surface border border-panel-border text-white text-xs rounded-xl px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" placeholder="Fechado presencialmente aos domingos e feriados. Atendimento online via WhatsApp." type="text"/>
+                                </div>
+                            </div>
+
+                            <!-- Retirada Rápida (Takeaway) -->
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                                <div class="md:col-span-3">
+                                    <span class="text-xs font-bold text-white flex items-center gap-2">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                        Retirada Rápida (Takeaway)
+                                    </span>
+                                </div>
+                                <div class="md:col-span-3">
+                                    <label class="block text-[11px] font-semibold text-slate-400 mb-1" for="horario-retirada">Disponibilidade</label>
+                                    <input id="horario-retirada" class="w-full bg-panel-surface border border-panel-border text-white text-xs rounded-xl px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" placeholder="Horário normal de expediente" type="text"/>
+                                </div>
+                                <div class="md:col-span-6">
+                                    <label class="block text-[11px] font-semibold text-slate-400 mb-1" for="atividades-retirada">Descrição do Serviço</label>
+                                    <input id="atividades-retirada" class="w-full bg-panel-surface border border-panel-border text-white text-xs rounded-xl px-3 py-2 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" placeholder="Retirada de kits e pedidos express sem espera." type="text"/>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Submit Button -->
                     <div class="pt-4 border-t border-panel-border flex justify-end">
-                        <button class="bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm px-8 py-3.5 rounded-xl shadow-md transition-all active:scale-95" type="submit">
-                            Salvar Informações do Espaço
+                        <button class="bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm px-8 py-3.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-2" type="submit">
+                            <span class="material-symbols-outlined text-lg">save</span>
+                            <span>Salvar Informações do Espaço</span>
                         </button>
                     </div>
 
