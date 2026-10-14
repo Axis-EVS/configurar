@@ -359,6 +359,59 @@ async function moveCardapioItem(item, direction) {
   }
 }
 
+// Rebaixa automaticamente itens com ordens conflitantes ao salvar/editar produto
+async function adjustCardapioOrdersOnSave(targetOrd, targetCat, targetSubcat, excludeId) {
+  const isCombo = targetSubcat === "Combos";
+  const otherItems = allCardapioItems.filter(i => 
+    (!excludeId || i.id !== excludeId) && 
+    i.categoria === targetCat && 
+    (i.subcategoria === "Combos") === isCombo
+  );
+
+  if (otherItems.length === 0) return [];
+
+  // Se o item já estava cadastrado e sua ordem/categoria não mudou, não há colisão
+  if (excludeId) {
+    const existing = allCardapioItems.find(i => i.id === excludeId);
+    if (
+      existing &&
+      existing.categoria === targetCat &&
+      (existing.subcategoria === "Combos") === isCombo &&
+      Number(existing.ordem) === targetOrd
+    ) {
+      return [];
+    }
+  }
+
+  // Verifica se existe algum outro item exatamente na ordem desejada
+  const hasCollision = otherItems.some(i => Number(i.ordem) === targetOrd);
+  if (!hasCollision) {
+    return [];
+  }
+
+  // Itens na ordem desejada ou superior que precisam ser rebaixados (deslocados para baixo)
+  const collidingItems = otherItems
+    .filter(i => Number(i.ordem) >= targetOrd)
+    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+
+  const updates = [];
+  let nextAvailable = targetOrd + 1;
+
+  for (const it of collidingItems) {
+    const currentOrd = Number(it.ordem) || 0;
+    if (currentOrd < nextAvailable) {
+      const newOrd = nextAvailable;
+      it.ordem = newOrd;
+      updates.push(supabaseApp.from("cardapio").update({ ordem: newOrd }).eq("id", it.id));
+      nextAvailable = newOrd + 1;
+    } else {
+      nextAvailable = currentOrd + 1;
+    }
+  }
+
+  return updates;
+}
+
 // Category Order Reordering Controls
 function renderCategoryOrderControls() {
   const container = document.getElementById("category-order-container");
@@ -464,6 +517,10 @@ function renderCardapioRow(tbody, item, { isAllCategoryView, isFirst, isLast, di
     `;
   }
 
+  const benefits = item.beneficios || [];
+  const descItem = benefits.find(i => typeof i === "string" && i.startsWith("[DESCRICAO]"));
+  const descText = item.descricao || (descItem ? descItem.replace("[DESCRICAO]", "") : "");
+
   tr.innerHTML = `
     <td class="p-3.5 text-center">
       ${orderCellContent}
@@ -472,6 +529,7 @@ function renderCardapioRow(tbody, item, { isAllCategoryView, isFirst, isLast, di
       ${thumbHtml}
       <div>
         <div class="text-white font-bold text-sm">${escapeHtml(item.nome)}</div>
+        ${descText ? `<div class="text-[11px] text-slate-400 mt-0.5 line-clamp-1 max-w-xs">${escapeHtml(descText)}</div>` : ""}
         <div class="mt-0.5">${subcatBadge}</div>
       </div>
     </td>
@@ -684,7 +742,19 @@ function editCardapioItem(t) {
   cardapioImages = Array.isArray(t.imagens) && t.imagens.length > 0 ? [...t.imagens] : (t.imagem_url ? [t.imagem_url] : []);
   renderCardapioGallery();
   document.getElementById("cardapio-show-image").checked = !!t.exibir_imagem;
-  document.getElementById("cardapio-benefits").value = (t.beneficios || []).join("; ");
+  
+  const benefits = t.beneficios || [];
+  const descItem = benefits.find(i => typeof i === "string" && i.startsWith("[DESCRICAO]"));
+  const descText = t.descricao || (descItem ? descItem.replace("[DESCRICAO]", "") : "");
+  const otherBenefits = benefits.filter(i => typeof i === "string" && !i.startsWith("[DESCRICAO]"));
+
+  const descEl = document.getElementById("cardapio-description");
+  if (descEl) {
+    descEl.value = descText;
+    const descCounter = document.getElementById("cardapio-desc-counter");
+    if (descCounter) descCounter.textContent = `${descText.length} / 120 caracteres`;
+  }
+  document.getElementById("cardapio-benefits").value = otherBenefits.join("; ");
   
   const title = document.getElementById("cardapio-form-title");
   if (title) title.textContent = "Editar Item";
@@ -716,7 +786,19 @@ function duplicateCardapioItem(t) {
   cardapioImages = Array.isArray(t.imagens) && t.imagens.length > 0 ? [...t.imagens] : (t.imagem_url ? [t.imagem_url] : []);
   renderCardapioGallery();
   document.getElementById("cardapio-show-image").checked = !!t.exibir_imagem;
-  document.getElementById("cardapio-benefits").value = (t.beneficios || []).join("; ");
+  
+  const benefits = t.beneficios || [];
+  const descItem = benefits.find(i => typeof i === "string" && i.startsWith("[DESCRICAO]"));
+  const descText = t.descricao || (descItem ? descItem.replace("[DESCRICAO]", "") : "");
+  const otherBenefits = benefits.filter(i => typeof i === "string" && !i.startsWith("[DESCRICAO]"));
+
+  const descEl = document.getElementById("cardapio-description");
+  if (descEl) {
+    descEl.value = descText;
+    const descCounter = document.getElementById("cardapio-desc-counter");
+    if (descCounter) descCounter.textContent = `${descText.length} / 120 caracteres`;
+  }
+  document.getElementById("cardapio-benefits").value = otherBenefits.join("; ");
   
   const title = document.getElementById("cardapio-form-title");
   if (title) title.textContent = "Duplicar Item (Novo)";
@@ -732,6 +814,13 @@ function clearCardapioForm() {
   formCardapio.reset();
   document.getElementById("cardapio-id").value = "";
   
+  const descEl = document.getElementById("cardapio-description");
+  if (descEl) {
+    descEl.value = "";
+    const descCounter = document.getElementById("cardapio-desc-counter");
+    if (descCounter) descCounter.textContent = "0 / 120 caracteres";
+  }
+
   // Próxima ordem automática para o novo item
   const cat = document.getElementById("cardapio-category")?.value || "Nutrição";
   const sub = document.getElementById("cardapio-subcategory")?.value || "Produtos";
@@ -782,8 +871,10 @@ document.getElementById("cardapio-subcategory")?.addEventListener("change", () =
 if (formCardapio) {
   formCardapio.addEventListener("submit", async t => {
     t.preventDefault();
+    const desc = (document.getElementById("cardapio-description")?.value || "").trim();
     const rawBenefits = document.getElementById("cardapio-benefits").value;
     const benefits = rawBenefits ? rawBenefits.split(";").map(n => n.trim()).filter(Boolean) : [];
+    if (desc) benefits.unshift(`[DESCRICAO]${desc}`);
     
     const payload = {
       categoria: document.getElementById("cardapio-category").value,
@@ -814,14 +905,33 @@ if (formCardapio) {
     }
 
     try {
+      // Reordena automaticamente itens com ordens conflitantes (rebaixa itens existentes)
+      const orderUpdates = await adjustCardapioOrdersOnSave(
+        payload.ordem,
+        payload.categoria,
+        payload.subcategoria,
+        editingCardapioId
+      );
+      if (orderUpdates.length > 0) {
+        await Promise.all(orderUpdates);
+      }
+
       if (editingCardapioId) {
         const { error: n } = await supabaseApp.from("cardapio").update(payload).eq("id", editingCardapioId);
         if (n) throw n;
-        showToast("Item atualizado com sucesso!");
+        if (orderUpdates.length > 0) {
+          showToast("Item atualizado e itens seguintes rebaixados com sucesso!");
+        } else {
+          showToast("Item atualizado com sucesso!");
+        }
       } else {
         const { error: n } = await supabaseApp.from("cardapio").insert([payload]);
         if (n) throw n;
-        showToast("Novo item cadastrado no cardápio!");
+        if (orderUpdates.length > 0) {
+          showToast("Novo item cadastrado e posições seguintes rebaixadas com sucesso!");
+        } else {
+          showToast("Novo item cadastrado no cardápio!");
+        }
       }
       clearCardapioForm();
       await fetchCardapioItems();
@@ -906,6 +1016,45 @@ async function moveProgramaItem(item, direction) {
     console.error("Erro ao reordenar programa:", err);
     showToast("Erro ao reordenar programa: " + err.message, "error");
   }
+}
+
+// Rebaixa automaticamente programas com ordens conflitantes ao salvar/editar
+async function adjustProgramasOrdersOnSave(targetOrd, excludeId) {
+  const otherItems = allProgramasItems.filter(i => !excludeId || i.id !== excludeId);
+  if (otherItems.length === 0) return [];
+
+  if (excludeId) {
+    const existing = allProgramasItems.find(i => i.id === excludeId);
+    if (existing && Number(existing.ordem) === targetOrd) {
+      return [];
+    }
+  }
+
+  const hasCollision = otherItems.some(i => Number(i.ordem) === targetOrd);
+  if (!hasCollision) {
+    return [];
+  }
+
+  const collidingItems = otherItems
+    .filter(i => Number(i.ordem) >= targetOrd)
+    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+
+  const updates = [];
+  let nextAvailable = targetOrd + 1;
+
+  for (const it of collidingItems) {
+    const currentOrd = Number(it.ordem) || 0;
+    if (currentOrd < nextAvailable) {
+      const newOrd = nextAvailable;
+      it.ordem = newOrd;
+      updates.push(supabaseApp.from("programas").update({ ordem: newOrd }).eq("id", it.id));
+      nextAvailable = newOrd + 1;
+    } else {
+      nextAvailable = currentOrd + 1;
+    }
+  }
+
+  return updates;
 }
 
 function renderProgramasGrid(t) {
@@ -1068,14 +1217,30 @@ if (formPrograma) {
     };
 
     try {
+      const orderUpdates = await adjustProgramasOrdersOnSave(
+        payload.ordem,
+        editingProgramaId
+      );
+      if (orderUpdates.length > 0) {
+        await Promise.all(orderUpdates);
+      }
+
       if (editingProgramaId) {
         const { error: i } = await supabaseApp.from("programas").update(payload).eq("id", editingProgramaId);
         if (i) throw i;
-        showToast("Programa atualizado com sucesso!");
+        if (orderUpdates.length > 0) {
+          showToast("Programa atualizado e posições seguintes rebaixadas com sucesso!");
+        } else {
+          showToast("Programa atualizado com sucesso!");
+        }
       } else {
         const { error: i } = await supabaseApp.from("programas").insert([payload]);
         if (i) throw i;
-        showToast("Novo programa cadastrado!");
+        if (orderUpdates.length > 0) {
+          showToast("Novo programa cadastrado e posições seguintes rebaixadas com sucesso!");
+        } else {
+          showToast("Novo programa cadastrado!");
+        }
       }
       clearProgramaForm();
       fetchProgramasItems();
@@ -1529,6 +1694,15 @@ function setupUploads() {
       const files = e.target.files;
       if (files && files.length > 0) uploadMultipleFiles(files, true);
       cardapioFileIn.value = "";
+    });
+  }
+
+  // Cardápio Description Character Counter
+  const cardapioDescInput = document.getElementById("cardapio-description");
+  const cardapioDescCounter = document.getElementById("cardapio-desc-counter");
+  if (cardapioDescInput && cardapioDescCounter) {
+    cardapioDescInput.addEventListener("input", () => {
+      cardapioDescCounter.textContent = `${cardapioDescInput.value.length} / 120 caracteres`;
     });
   }
 

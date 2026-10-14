@@ -349,7 +349,9 @@
                                 </div>
 
                                 <div class="space-y-1">
-                                    <label class="block text-xs font-bold text-slate-300" for="cardapio-order">Ordem / Posição</label>
+                                    <label class="block text-xs font-bold text-slate-300" for="cardapio-order">
+                                        Ordem / Posição <span class="text-[10px] text-brand-400 font-normal">(rebaixa os itens seguintes automaticamente)</span>
+                                    </label>
                                     <div class="relative">
                                         <span class="material-symbols-outlined absolute left-3.5 top-2.5 text-slate-400 text-base">format_list_numbered</span>
                                         <input id="cardapio-order" class="w-full bg-panel-input border border-panel-border text-white text-sm font-bold rounded-xl pl-10 pr-3 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none placeholder-slate-500" placeholder="1" type="number" min="0" step="1" value="0"/>
@@ -397,6 +399,16 @@
                                     <input id="cardapio-show-image" checked class="sr-only peer" type="checkbox"/>
                                     <div class="w-9 h-5 bg-slate-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-500"></div>
                                 </label>
+                            </div>
+
+                            <!-- Description (Leve Descrição) -->
+                            <div class="space-y-1">
+                                <div class="flex items-center justify-between">
+                                    <label class="block text-xs font-bold text-slate-300" for="cardapio-description">Descrição Resumida (Leve Descrição no Card)</label>
+                                    <span id="cardapio-desc-counter" class="text-[10px] text-slate-400 font-medium">0 / 120 caracteres</span>
+                                </div>
+                                <textarea id="cardapio-description" maxlength="120" class="w-full bg-panel-input border border-panel-border text-white text-xs rounded-xl px-3 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none resize-none placeholder-slate-500" placeholder="Ex: Shake proteico e cremoso com calda crocante e pedaços de morango." rows="2"></textarea>
+                                <p class="text-[10px] text-slate-500">Texto breve exibido logo abaixo do nome do produto no cardápio (limite máx. 120 caracteres para manter o alinhamento).</p>
                             </div>
 
                             <!-- Benefits -->
@@ -544,7 +556,9 @@
                                 </div>
 
                                 <div class="space-y-1">
-                                    <label class="block text-xs font-bold text-slate-300" for="programa-order">Ordem / Posição</label>
+                                    <label class="block text-xs font-bold text-slate-300" for="programa-order">
+                                        Ordem / Posição <span class="text-[10px] text-brand-400 font-normal">(rebaixa os itens seguintes automaticamente)</span>
+                                    </label>
                                     <div class="relative">
                                         <span class="material-symbols-outlined absolute left-3.5 top-2.5 text-slate-400 text-base">format_list_numbered</span>
                                         <input id="programa-order" class="w-full bg-panel-input border border-panel-border text-white text-sm font-bold rounded-xl pl-10 pr-3 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none placeholder-slate-500" placeholder="1" type="number" min="0" step="1" value="0"/>
