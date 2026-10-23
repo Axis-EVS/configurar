@@ -59,6 +59,8 @@ const loginErrorBanner = document.getElementById("login-error-banner");
 const navCardapioBtn = document.getElementById("nav-cardapio");
 const navProgramasBtn = document.getElementById("nav-programas");
 const navEspacoBtn = document.getElementById("nav-espaco");
+const navAvaliacoesBtn = document.getElementById("nav-avaliacoes");
+const navAvaliacoesBadge = document.getElementById("nav-avaliacoes-badge");
 const logoutBtnDesktop = document.getElementById("btn-logout");
 const logoutBtnMobile = document.getElementById("btn-logout-mobile");
 
@@ -66,6 +68,7 @@ const logoutBtnMobile = document.getElementById("btn-logout-mobile");
 const tabCardapioSec = document.getElementById("tab-cardapio-section");
 const tabProgramasSec = document.getElementById("tab-programas-section");
 const tabEspacoSec = document.getElementById("tab-espaco-section");
+const tabAvaliacoesSec = document.getElementById("tab-avaliacoes-section");
 
 // Forms & Feedback
 const formCardapio = document.getElementById("cardapio-form");
@@ -141,6 +144,8 @@ async function checkAuthSession() {
     fetchCardapioItems();
     fetchProgramasItems();
     fetchEspacoInfo();
+    fetchAvaliacoesAdmin(true);
+    initAvaliacoesRealtime();
   }
 }
 
@@ -221,24 +226,30 @@ function switchTab(targetKey) {
   const tabs = [
     { key: "cardapio", btn: navCardapioBtn, sec: tabCardapioSec },
     { key: "programas", btn: navProgramasBtn, sec: tabProgramasSec },
-    { key: "espaco", btn: navEspacoBtn, sec: tabEspacoSec }
+    { key: "espaco", btn: navEspacoBtn, sec: tabEspacoSec },
+    { key: "avaliacoes", btn: navAvaliacoesBtn, sec: tabAvaliacoesSec }
   ];
 
   tabs.forEach(tab => {
     if (!tab.btn || !tab.sec) return;
     if (tab.key === targetKey) {
-      tab.btn.className = "nav-item flex items-center gap-3 px-4 py-3 text-emerald-400 font-bold bg-panel-card border-l-4 border-brand-500 rounded-xl text-left transition-all whitespace-nowrap w-full shadow-sm";
+      tab.btn.className = "nav-item flex items-center justify-between px-4 py-3 text-emerald-400 font-bold bg-panel-card border-l-4 border-brand-500 rounded-xl text-left transition-all whitespace-nowrap w-full shadow-sm";
       tab.sec.classList.remove("hidden");
     } else {
-      tab.btn.className = "nav-item flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-slate-200 hover:bg-panel-card/60 rounded-xl text-left transition-all whitespace-nowrap w-full";
+      tab.btn.className = "nav-item flex items-center justify-between px-4 py-3 text-slate-400 hover:text-slate-200 hover:bg-panel-card/60 rounded-xl text-left transition-all whitespace-nowrap w-full";
       tab.sec.classList.add("hidden");
     }
   });
+
+  if (targetKey === "avaliacoes") {
+    fetchAvaliacoesAdmin(true);
+  }
 }
 
 if (navCardapioBtn) navCardapioBtn.addEventListener("click", t => { t.preventDefault(); switchTab("cardapio"); });
 if (navProgramasBtn) navProgramasBtn.addEventListener("click", t => { t.preventDefault(); switchTab("programas"); });
 if (navEspacoBtn) navEspacoBtn.addEventListener("click", t => { t.preventDefault(); switchTab("espaco"); });
+if (navAvaliacoesBtn) navAvaliacoesBtn.addEventListener("click", t => { t.preventDefault(); switchTab("avaliacoes"); });
 
 // ==========================================
 // METRICS (KPIs)
@@ -1730,9 +1741,469 @@ function setupUploads() {
   });
 }
 
+// ==========================================
+// GESTÃO DE AVALIAÇÕES (SITE 1 ADMIN)
+// ==========================================
+let allAvaliacoesAdmin = [];
+let deletingAvaliacaoId = null;
+let replyingAvaliacaoId = null;
+let avaliacoesRealtimeChannel = null;
+
+async function fetchAvaliacoesAdmin(silent = false) {
+  try {
+    const { data, error } = await supabaseApp
+      .from("avaliacoes")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("[Avaliacoes Admin] Erro ao buscar avaliações:", error);
+      if (!silent) showToast("Erro ao carregar avaliações: " + error.message, "error");
+      return;
+    }
+
+    allAvaliacoesAdmin = data || [];
+    updateAvaliacoesKPIs();
+    populateAvaliacoesProductFilter();
+    renderAvaliacoesList();
+    if (!silent) showToast("Lista de avaliações atualizada!");
+  } catch (err) {
+    console.error("[Avaliacoes Admin] Erro inesperado:", err);
+    if (!silent) showToast("Erro inesperado ao carregar avaliações.", "error");
+  }
+}
+
+function updateAvaliacoesKPIs() {
+  const kpiMedia = document.getElementById("kpi-media-geral");
+  const kpiTotal = document.getElementById("kpi-total-avaliacoes");
+  const kpiAtivas = document.getElementById("kpi-total-ativas");
+  const kpiResp = document.getElementById("kpi-total-respondidas");
+  const kpiTaxa = document.getElementById("kpi-taxa-resposta");
+  const badge = document.getElementById("nav-avaliacoes-badge");
+
+  const total = allAvaliacoesAdmin.length;
+  const ativas = allAvaliacoesAdmin.filter(a => a.status === "ativo");
+  const ocultas = allAvaliacoesAdmin.filter(a => a.status === "oculto");
+  const respondidas = allAvaliacoesAdmin.filter(a => a.resposta_admin && a.resposta_admin.trim().length > 0);
+
+  const avg = ativas.length > 0
+    ? (ativas.reduce((acc, a) => acc + (Number(a.nota) || 0), 0) / ativas.length).toFixed(1)
+    : "0.0";
+
+  const taxaResp = total > 0 ? Math.round((respondidas.length / total) * 100) : 0;
+
+  if (kpiMedia) kpiMedia.textContent = `${avg} ★`;
+  if (kpiTotal) kpiTotal.textContent = String(total);
+  if (kpiAtivas) kpiAtivas.textContent = `${ativas.length} ativas, ${ocultas.length} ocultas`;
+  if (kpiResp) kpiResp.textContent = String(respondidas.length);
+  if (kpiTaxa) kpiTaxa.textContent = `${taxaResp}% respondidas`;
+
+  if (badge) {
+    if (total > 0) {
+      badge.textContent = String(total);
+      badge.classList.remove("hidden");
+    } else {
+      badge.classList.add("hidden");
+    }
+  }
+}
+
+function populateAvaliacoesProductFilter() {
+  const select = document.getElementById("filter-review-product");
+  if (!select) return;
+  const currentVal = select.value;
+
+  const itemsMap = new Map();
+  allCardapioItems.forEach(i => {
+    itemsMap.set(String(i.id), i.nome);
+  });
+  allAvaliacoesAdmin.forEach(a => {
+    if (a.produto_id && !itemsMap.has(String(a.produto_id))) {
+      itemsMap.set(String(a.produto_id), `Produto #${a.produto_id}`);
+    }
+  });
+
+  let optionsHtml = `<option value="">Todos os Produtos</option>`;
+  itemsMap.forEach((nome, id) => {
+    optionsHtml += `<option value="${escapeHtml(id)}">${escapeHtml(nome)}</option>`;
+  });
+
+  select.innerHTML = optionsHtml;
+  if (currentVal && itemsMap.has(currentVal)) {
+    select.value = currentVal;
+  }
+}
+
+function renderAvaliacoesList() {
+  const container = document.getElementById("avaliacoes-admin-list");
+  if (!container) return;
+
+  const searchVal = (document.getElementById("filter-review-search")?.value || "").toLowerCase().trim();
+  const prodVal = document.getElementById("filter-review-product")?.value || "";
+  const ratingVal = document.getElementById("filter-review-rating")?.value || "";
+  const statusVal = document.getElementById("filter-review-status")?.value || "";
+
+  const filtered = allAvaliacoesAdmin.filter(a => {
+    if (prodVal && String(a.produto_id) !== String(prodVal)) return false;
+    if (ratingVal && Number(a.nota) !== Number(ratingVal)) return false;
+    if (statusVal === "ativo" && a.status !== "ativo") return false;
+    if (statusVal === "oculto" && a.status !== "oculto") return false;
+    if (statusVal === "sem_resposta" && (a.resposta_admin && a.resposta_admin.trim().length > 0)) return false;
+
+    if (searchVal) {
+      const prod = allCardapioItems.find(p => String(p.id) === String(a.produto_id));
+      const prodName = prod ? prod.nome.toLowerCase() : "";
+      const userName = (a.user_nome || "").toLowerCase();
+      const userEmail = (a.user_email || "").toLowerCase();
+      const comment = (a.comentario || "").toLowerCase();
+      const reply = (a.resposta_admin || "").toLowerCase();
+
+      const matched = userName.includes(searchVal) ||
+        userEmail.includes(searchVal) ||
+        comment.includes(searchVal) ||
+        reply.includes(searchVal) ||
+        prodName.includes(searchVal);
+
+      if (!matched) return false;
+    }
+
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="p-10 text-center bg-panel-card border border-panel-border rounded-3xl text-slate-400 space-y-3 shadow-soft-xl">
+        <div class="w-14 h-14 rounded-2xl bg-panel-surface border border-panel-border mx-auto flex items-center justify-center text-slate-500">
+          <span class="material-symbols-outlined text-3xl">hotel_class</span>
+        </div>
+        <div>
+          <h4 class="font-bold text-white text-base">Nenhuma avaliação encontrada</h4>
+          <p class="text-xs text-slate-400 max-w-md mx-auto mt-1">
+            Nenhuma avaliação corresponde aos filtros selecionados. As avaliações feitas por clientes na vitrine aparecerão aqui automaticamente em tempo real.
+          </p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = "";
+
+  filtered.forEach(a => {
+    const card = document.createElement("div");
+    card.className = "bg-panel-card border border-panel-border rounded-2xl p-5 transition-all hover:border-brand-500/30 space-y-3.5 shadow-sm";
+
+    const prod = allCardapioItems.find(p => String(p.id) === String(a.produto_id));
+    const prodName = prod ? prod.nome : `Produto #${a.produto_id}`;
+    const prodCat = prod ? prod.categoria : "";
+    const prodImgs = prod && Array.isArray(prod.imagens) && prod.imagens.length > 0 ? prod.imagens : (prod?.imagem_url ? [prod.imagem_url] : []);
+    const prodCover = prodImgs[0] || "";
+
+    const isAtivo = a.status === "ativo";
+    const statusBadge = isAtivo
+      ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[11px] font-bold border border-emerald-500/20"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Visível na Vitrine</span>`
+      : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 text-[11px] font-bold border border-amber-500/20"><span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Oculta (Moderação)</span>`;
+
+    const stars = "★".repeat(a.nota) + "☆".repeat(Math.max(0, 5 - a.nota));
+    const dateFormatted = a.created_at
+      ? new Date(a.created_at).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+      : "";
+
+    const userInitial = (a.user_nome || "C").charAt(0).toUpperCase();
+    const avatarHtml = a.user_foto
+      ? `<img src="${escapeHtml(a.user_foto)}" class="w-11 h-11 rounded-2xl object-cover border border-panel-border shrink-0" alt="${escapeHtml(a.user_nome)}" onerror="this.onerror=null;this.parentElement.innerHTML='<div class=\\'w-11 h-11 rounded-2xl bg-brand-500/20 text-brand-400 font-bold flex items-center justify-center border border-brand-500/30 shrink-0\\'>${escapeHtml(userInitial)}</div>'"/>`
+      : `<div class="w-11 h-11 rounded-2xl bg-brand-500/20 text-brand-400 font-bold flex items-center justify-center border border-brand-500/30 shrink-0">${escapeHtml(userInitial)}</div>`;
+
+    const commentHtml = a.comentario && a.comentario.trim()
+      ? `<div class="bg-panel-surface/60 border border-panel-border/60 rounded-xl p-3 text-xs text-slate-200 leading-relaxed">${escapeHtml(a.comentario)}</div>`
+      : `<div class="text-xs text-slate-500 italic py-1">Avaliação enviada com nota ${a.nota} estrelas sem comentário escrito.</div>`;
+
+    const replyDate = a.respondido_em
+      ? new Date(a.respondido_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })
+      : "";
+
+    const replyBoxHtml = a.resposta_admin ? `
+      <div class="bg-emerald-950/20 border-l-4 border-emerald-500 rounded-r-xl p-3.5 space-y-1.5">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+            <span class="material-symbols-outlined text-sm">verified</span>
+            <span>Resposta Oficial AXIS EVS</span>
+          </div>
+          ${replyDate ? `<span class="text-[10px] text-slate-500">${escapeHtml(replyDate)}</span>` : ""}
+        </div>
+        <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(a.resposta_admin)}</p>
+      </div>
+    ` : "";
+
+    const isGoogleVerified = !!a.user_foto || (a.user_id && !a.user_id.startsWith("email:"));
+    const verificationBadge = isGoogleVerified
+      ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20" title="Validado via Google OAuth (1-clique)"><span class="material-symbols-outlined text-xs">verified</span> Google</span>`
+      : `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" title="Validado por E-mail Pessoal"><span class="material-symbols-outlined text-xs">check_circle</span> E-mail Válido</span>`;
+
+    const isCombo = prod && prod.subcategoria === "Combos";
+    const typeTag = isCombo
+      ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30">⭐ Combo</span>`
+      : `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">🍽️ Produto</span>`;
+
+    card.innerHTML = `
+      <!-- Header Row -->
+      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div class="flex items-center gap-3">
+          ${avatarHtml}
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="font-bold text-sm text-white">${escapeHtml(a.user_nome || "Cliente")}</span>
+              ${verificationBadge}
+            </div>
+            <div class="flex items-center gap-2 text-xs text-slate-400 mt-0.5 flex-wrap">
+              <span>${escapeHtml(a.user_email || "")}</span>
+              ${dateFormatted ? `<span>•</span><span>${escapeHtml(dateFormatted)}</span>` : ""}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 self-start sm:self-auto">
+          ${statusBadge}
+        </div>
+      </div>
+
+      <!-- Rating & Target Product Info -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-panel-border/60">
+        <div class="flex items-center gap-2">
+          <span class="text-amber-400 font-mono font-black text-sm tracking-widest">${stars}</span>
+          <span class="text-xs font-bold text-white">(${a.nota}.0 de 5.0)</span>
+        </div>
+
+        <!-- Product badge -->
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-xl bg-panel-surface border border-panel-border text-xs text-slate-300 flex-wrap">
+          ${typeTag}
+          ${prodCover ? `<img src="${escapeHtml(prodCover)}" class="w-4 h-4 rounded object-contain" alt=""/>` : `<span class="material-symbols-outlined text-xs text-slate-400">restaurant</span>`}
+          <span class="font-bold text-white">${escapeHtml(prodName)}</span>
+          ${prodCat ? `<span class="text-[10px] text-slate-500 font-semibold">• ${escapeHtml(prodCat)}</span>` : ""}
+        </div>
+      </div>
+
+      <!-- Comment -->
+      ${commentHtml}
+
+      <!-- Official AXIS Reply (if exists) -->
+      ${replyBoxHtml}
+
+      <!-- Actions Toolbar -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-panel-border/60">
+        <div class="flex items-center gap-2">
+          <button class="btn-reply-review px-3.5 py-2 bg-panel-surface hover:bg-panel-border border border-panel-border rounded-xl text-xs font-bold text-white flex items-center gap-1.5 transition-all active:scale-95 shadow-sm" data-id="${escapeHtml(a.id)}">
+            <span class="material-symbols-outlined text-sm text-emerald-400">forum</span>
+            <span>${a.resposta_admin ? "Editar Resposta" : "Responder como AXIS EVS"}</span>
+          </button>
+
+          <button class="btn-toggle-status-review px-3.5 py-2 bg-panel-surface hover:bg-panel-border border border-panel-border rounded-xl text-xs font-bold ${isAtivo ? "text-amber-300 hover:text-amber-200" : "text-emerald-300 hover:text-emerald-200"} flex items-center gap-1.5 transition-all active:scale-95 shadow-sm" data-id="${escapeHtml(a.id)}" data-status="${escapeHtml(a.status)}">
+            <span class="material-symbols-outlined text-sm">${isAtivo ? "visibility_off" : "visibility"}</span>
+            <span>${isAtivo ? "Ocultar da Vitrine" : "Tornar Pública"}</span>
+          </button>
+        </div>
+
+        <button class="btn-delete-review p-2 text-slate-400 hover:text-red-400 hover:bg-red-950/20 rounded-xl transition-colors cursor-pointer" title="Excluir Avaliação" data-id="${escapeHtml(a.id)}">
+          <span class="material-symbols-outlined text-lg leading-none">delete</span>
+        </button>
+      </div>
+    `;
+
+    // Bind card buttons
+    card.querySelector(".btn-reply-review")?.addEventListener("click", () => openReplyModal(a));
+    card.querySelector(".btn-toggle-status-review")?.addEventListener("click", () => toggleReviewStatus(a));
+    card.querySelector(".btn-delete-review")?.addEventListener("click", () => openDeleteReviewModal(a));
+
+    container.appendChild(card);
+  });
+}
+
+async function toggleReviewStatus(review) {
+  const newStatus = review.status === "ativo" ? "oculto" : "ativo";
+  const actionLabel = newStatus === "ativo" ? "publicada na vitrine" : "ocultada com sucesso";
+  try {
+    const { error } = await supabaseApp
+      .from("avaliacoes")
+      .update({ status: newStatus })
+      .eq("id", review.id);
+
+    if (error) throw error;
+
+    review.status = newStatus;
+    updateAvaliacoesKPIs();
+    renderAvaliacoesList();
+    showToast(`Avaliação ${actionLabel}!`);
+  } catch (err) {
+    console.error("[Avaliacoes Admin] Erro ao alterar status:", err);
+    showToast("Erro ao alterar status: " + err.message, "error");
+  }
+}
+
+function openReplyModal(review) {
+  replyingAvaliacaoId = review.id;
+  const modal = document.getElementById("reply-review-modal");
+  const cardSnippet = document.getElementById("reply-modal-customer-card");
+  const replyInput = document.getElementById("reply-modal-text");
+  const replyCounter = document.getElementById("reply-modal-counter");
+
+  if (!modal || !cardSnippet || !replyInput) return;
+
+  const prod = allCardapioItems.find(p => String(p.id) === String(review.produto_id));
+  const prodName = prod ? prod.nome : `Produto #${review.produto_id}`;
+  const stars = "★".repeat(review.nota) + "☆".repeat(Math.max(0, 5 - review.nota));
+
+  cardSnippet.innerHTML = `
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="font-bold text-xs text-white">${escapeHtml(review.user_nome || "Cliente")}</span>
+        <span class="text-amber-400 font-mono font-black text-xs">${stars}</span>
+      </div>
+      <span class="text-[11px] text-slate-400 font-semibold">${escapeHtml(prodName)}</span>
+    </div>
+    <p class="text-xs text-slate-300 italic">${escapeHtml(review.comentario || "Avaliou com " + review.nota + " estrelas.")}</p>
+  `;
+
+  replyInput.value = review.resposta_admin || "";
+  if (replyCounter) replyCounter.textContent = `${replyInput.value.length} / 500`;
+
+  modal.classList.remove("hidden");
+  replyInput.focus();
+}
+
+function closeReplyModal() {
+  const modal = document.getElementById("reply-review-modal");
+  if (modal) modal.classList.add("hidden");
+  replyingAvaliacaoId = null;
+}
+
+function openDeleteReviewModal(review) {
+  deletingAvaliacaoId = review.id;
+  const modal = document.getElementById("delete-review-modal");
+  if (modal) modal.classList.remove("hidden");
+}
+
+function closeDeleteReviewModal() {
+  const modal = document.getElementById("delete-review-modal");
+  if (modal) modal.classList.add("hidden");
+  deletingAvaliacaoId = null;
+}
+
+function initAvaliacoesRealtime() {
+  if (avaliacoesRealtimeChannel) return;
+  try {
+    avaliacoesRealtimeChannel = supabaseApp
+      .channel("admin-avaliacoes-live-sync")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "avaliacoes" },
+        payload => {
+          console.log("[Admin Realtime] Atualização recebida em avaliacoes:", payload);
+          fetchAvaliacoesAdmin(true);
+        }
+      )
+      .subscribe((status) => {
+        console.log("[Admin Realtime] Status inscrição avaliacoes:", status);
+      });
+  } catch (err) {
+    console.error("[Admin Realtime] Falha ao assinar canal:", err);
+  }
+}
+
+function setupAvaliacoesListeners() {
+  // Search & filter inputs
+  document.getElementById("filter-review-search")?.addEventListener("input", renderAvaliacoesList);
+  document.getElementById("filter-review-product")?.addEventListener("change", renderAvaliacoesList);
+  document.getElementById("filter-review-rating")?.addEventListener("change", renderAvaliacoesList);
+  document.getElementById("filter-review-status")?.addEventListener("change", renderAvaliacoesList);
+
+  // Refresh button
+  document.getElementById("btn-refresh-avaliacoes")?.addEventListener("click", () => fetchAvaliacoesAdmin(false));
+
+  // Reply modal listeners
+  document.getElementById("btn-close-reply-modal")?.addEventListener("click", closeReplyModal);
+  document.getElementById("btn-cancel-reply-modal")?.addEventListener("click", closeReplyModal);
+
+  const replyInput = document.getElementById("reply-modal-text");
+  const replyCounter = document.getElementById("reply-modal-counter");
+  if (replyInput && replyCounter) {
+    replyInput.addEventListener("input", () => {
+      replyCounter.textContent = `${replyInput.value.length} / 500`;
+    });
+  }
+
+  const replyForm = document.getElementById("reply-review-form");
+  if (replyForm) {
+    replyForm.addEventListener("submit", async e => {
+      e.preventDefault();
+      if (!replyingAvaliacaoId) return;
+
+      const replyText = document.getElementById("reply-modal-text")?.value.trim() || "";
+      const btn = document.getElementById("btn-submit-reply-modal");
+      if (btn) btn.disabled = true;
+
+      try {
+        const { error } = await supabaseApp
+          .from("avaliacoes")
+          .update({
+            resposta_admin: replyText || null,
+            respondido_em: replyText ? new Date().toISOString() : null
+          })
+          .eq("id", replyingAvaliacaoId);
+
+        if (error) throw error;
+
+        const target = allAvaliacoesAdmin.find(a => a.id === replyingAvaliacaoId);
+        if (target) {
+          target.resposta_admin = replyText || null;
+          target.respondido_em = replyText ? new Date().toISOString() : null;
+        }
+
+        updateAvaliacoesKPIs();
+        renderAvaliacoesList();
+        closeReplyModal();
+        showToast(replyText ? "Resposta oficial publicada com sucesso!" : "Resposta removida.");
+      } catch (err) {
+        console.error("[Avaliacoes Admin] Erro ao salvar resposta:", err);
+        showToast("Erro ao salvar resposta: " + err.message, "error");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
+  }
+
+  // Delete modal listeners
+  document.getElementById("btn-delete-review-cancel")?.addEventListener("click", closeDeleteReviewModal);
+  document.getElementById("btn-delete-review-confirm")?.addEventListener("click", async () => {
+    if (!deletingAvaliacaoId) return;
+    const btn = document.getElementById("btn-delete-review-confirm");
+    if (btn) btn.disabled = true;
+
+    try {
+      const { error } = await supabaseApp
+        .from("avaliacoes")
+        .delete()
+        .eq("id", deletingAvaliacaoId);
+
+      if (error) throw error;
+
+      allAvaliacoesAdmin = allAvaliacoesAdmin.filter(a => a.id !== deletingAvaliacaoId);
+      updateAvaliacoesKPIs();
+      renderAvaliacoesList();
+      closeDeleteReviewModal();
+      showToast("Avaliação removida permanentemente.");
+    } catch (err) {
+      console.error("[Avaliacoes Admin] Erro ao excluir avaliação:", err);
+      showToast("Erro ao excluir: " + err.message, "error");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+}
+
 function initAdminApp() {
   checkAuthSession();
   setupUploads();
+  setupAvaliacoesListeners();
 }
 
 if (document.readyState === "loading") {
