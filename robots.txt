@@ -1,0 +1,3 @@
+# Painel Administrativo CMS (Área Privada / Não Indexável)
+User-agent: *
+Disallow: /

@@ -92,8 +92,8 @@ let deletingProgramaId = null;
 let allCardapioItems = [];
 let allProgramasItems = [];
 let allCategoriesOrder = ["Nutrição", "Bebidas", "Produtos Fechados"];
-let currentCategoryFilter = "all";
-let currentTypeFilter = "all";
+let currentCategoryFilter = "Nutrição";
+let currentTypeFilter = "Produtos";
 let cardapioImages = [];
 let programaImages = [];
 
@@ -257,6 +257,7 @@ function updateDashboardMetrics() {
 // ==========================================
 // GESTÃO DE CARDÁPIO (CRUD, ORDERING & FILTERING)
 // ==========================================
+let isInitialCardapioNormalized = false;
 async function fetchCardapioItems() {
   try {
     const { data: t, error: e } = await supabaseApp
@@ -266,6 +267,35 @@ async function fetchCardapioItems() {
       .order("created_at", { ascending: false });
     if (e) throw e;
     allCardapioItems = t || [];
+
+    // Verificação de integridade das sequências na primeira carga (corrige 0s, duplicados e sequências quebradas)
+    if (!isInitialCardapioNormalized && allCardapioItems.length > 0) {
+      let needsFix = false;
+      for (const cat of allCategoriesOrder) {
+        for (const sub of ["Produtos", "Combos"]) {
+          const isCombo = sub === "Combos";
+          const group = allCardapioItems.filter(i => i.categoria === cat && (i.subcategoria === "Combos") === isCombo);
+          if (group.length > 0) {
+            const orders = group.map(i => Number(i.ordem) || 0);
+            const hasZero = orders.some(o => o <= 0);
+            const hasDups = new Set(orders).size !== orders.length;
+            const minOrd = Math.min(...orders);
+            if (hasZero || hasDups || minOrd !== 1) {
+              needsFix = true;
+              break;
+            }
+          }
+        }
+        if (needsFix) break;
+      }
+      if (needsFix) {
+        isInitialCardapioNormalized = true;
+        await normalizeCategoryOrders(null, null, true);
+        return;
+      }
+      isInitialCardapioNormalized = true;
+    }
+
     renderCardapioTable();
     updateDashboardMetrics();
   } catch (t) {
@@ -273,36 +303,39 @@ async function fetchCardapioItems() {
   }
 }
 
-async function normalizeCategoryOrders(categoryToNormalize, silent = false) {
-  const categories = categoryToNormalize ? [categoryToNormalize] : allCategoriesOrder;
+function getItemsInGroup(cat, subcat, excludeId = null) {
+  const isCombo = subcat === "Combos";
+  return allCardapioItems
+    .filter(i => (!excludeId || i.id !== excludeId) && i.categoria === cat && (i.subcategoria === "Combos") === isCombo)
+    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+}
+
+async function normalizeCategoryOrders(categoryToNormalize = null, typeToNormalize = null, silent = false) {
+  const categories = categoryToNormalize && categoryToNormalize !== "all" 
+    ? [categoryToNormalize] 
+    : allCategoriesOrder;
+  
+  const types = typeToNormalize && typeToNormalize !== "all"
+    ? [typeToNormalize]
+    : ["Produtos", "Combos"];
+
   const updates = [];
 
   for (const cat of categories) {
-    // Group 1: Itens Individuais (subcategoria !== 'Combos')
-    const individuais = allCardapioItems
-      .filter(i => i.categoria === cat && i.subcategoria !== "Combos")
-      .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+    for (const sub of types) {
+      const isCombo = sub === "Combos";
+      const group = allCardapioItems
+        .filter(i => i.categoria === cat && (i.subcategoria === "Combos") === isCombo)
+        .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
 
-    individuais.forEach((it, idx) => {
-      const targetOrd = idx + 1;
-      if (it.ordem !== targetOrd) {
-        it.ordem = targetOrd;
-        updates.push(supabaseApp.from("cardapio").update({ ordem: targetOrd }).eq("id", it.id));
-      }
-    });
-
-    // Group 2: Combos Especiais (subcategoria === 'Combos')
-    const combos = allCardapioItems
-      .filter(i => i.categoria === cat && i.subcategoria === "Combos")
-      .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
-
-    combos.forEach((it, idx) => {
-      const targetOrd = idx + 1;
-      if (it.ordem !== targetOrd) {
-        it.ordem = targetOrd;
-        updates.push(supabaseApp.from("cardapio").update({ ordem: targetOrd }).eq("id", it.id));
-      }
-    });
+      group.forEach((it, idx) => {
+        const targetOrd = idx + 1;
+        if (it.ordem !== targetOrd) {
+          it.ordem = targetOrd;
+          updates.push(supabaseApp.from("cardapio").update({ ordem: targetOrd }).eq("id", it.id));
+        }
+      });
+    }
   }
 
   if (updates.length > 0) {
@@ -322,24 +355,23 @@ async function normalizeCategoryOrders(categoryToNormalize, silent = false) {
 
 async function moveCardapioItem(item, direction) {
   const isCombo = item.subcategoria === "Combos";
-  // Filter strictly by the same category AND tipagem (subcategoria)
-  const groupItems = allCardapioItems
+  const group = allCardapioItems
     .filter(i => i.categoria === item.categoria && (i.subcategoria === "Combos") === isCombo)
     .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
 
-  const index = groupItems.findIndex(i => i.id === item.id);
+  const index = group.findIndex(i => i.id === item.id);
   if (index === -1) return;
   const targetIndex = direction === "up" ? index - 1 : index + 1;
-  if (targetIndex < 0 || targetIndex >= groupItems.length) return;
+  if (targetIndex < 0 || targetIndex >= group.length) return;
 
-  // Swap in array
-  const temp = groupItems[index];
-  groupItems[index] = groupItems[targetIndex];
-  groupItems[targetIndex] = temp;
+  // Swap no array
+  const temp = group[index];
+  group[index] = group[targetIndex];
+  group[targetIndex] = temp;
 
-  // Re-assign clean consecutive sequence 1..N
+  // Reatribui sequência estrita 1..N
   const updates = [];
-  groupItems.forEach((it, idx) => {
+  group.forEach((it, idx) => {
     const newOrd = idx + 1;
     if (it.ordem !== newOrd) {
       it.ordem = newOrd;
@@ -359,57 +391,61 @@ async function moveCardapioItem(item, direction) {
   }
 }
 
-// Rebaixa automaticamente itens com ordens conflitantes ao salvar/editar produto
-async function adjustCardapioOrdersOnSave(targetOrd, targetCat, targetSubcat, excludeId) {
+// Reordena perfeitamente os itens do mesmo tipo ao editar ou cadastrar novo produto
+async function reorderCardapioOnEditOrSave(targetCat, targetSubcat, targetOrd, editingId) {
   const isCombo = targetSubcat === "Combos";
-  const otherItems = allCardapioItems.filter(i => 
-    (!excludeId || i.id !== excludeId) && 
-    i.categoria === targetCat && 
-    (i.subcategoria === "Combos") === isCombo
-  );
-
-  if (otherItems.length === 0) return [];
-
-  // Se o item já estava cadastrado e sua ordem/categoria não mudou, não há colisão
-  if (excludeId) {
-    const existing = allCardapioItems.find(i => i.id === excludeId);
-    if (
-      existing &&
-      existing.categoria === targetCat &&
-      (existing.subcategoria === "Combos") === isCombo &&
-      Number(existing.ordem) === targetOrd
-    ) {
-      return [];
-    }
-  }
-
-  // Verifica se existe algum outro item exatamente na ordem desejada
-  const hasCollision = otherItems.some(i => Number(i.ordem) === targetOrd);
-  if (!hasCollision) {
-    return [];
-  }
-
-  // Itens na ordem desejada ou superior que precisam ser rebaixados (deslocados para baixo)
-  const collidingItems = otherItems
-    .filter(i => Number(i.ordem) >= targetOrd)
-    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
-
   const updates = [];
-  let nextAvailable = targetOrd + 1;
 
-  for (const it of collidingItems) {
-    const currentOrd = Number(it.ordem) || 0;
-    if (currentOrd < nextAvailable) {
-      const newOrd = nextAvailable;
+  let oldItem = null;
+  if (editingId) {
+    oldItem = allCardapioItems.find(i => i.id === editingId);
+  }
+
+  // 1. Se mudou de categoria ou subcategoria, reorganiza o grupo antigo (1..N) sem este item
+  if (oldItem && (oldItem.categoria !== targetCat || (oldItem.subcategoria === "Combos") !== isCombo)) {
+    const oldIsCombo = oldItem.subcategoria === "Combos";
+    const oldGroup = allCardapioItems
+      .filter(i => i.id !== editingId && i.categoria === oldItem.categoria && (i.subcategoria === "Combos") === oldIsCombo)
+      .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+    
+    oldGroup.forEach((it, idx) => {
+      const correctOrd = idx + 1;
+      if (it.ordem !== correctOrd) {
+        it.ordem = correctOrd;
+        updates.push(supabaseApp.from("cardapio").update({ ordem: correctOrd }).eq("id", it.id));
+      }
+    });
+  }
+
+  // 2. No grupo de destino (excluindo o próprio item que está sendo editado):
+  const targetGroup = allCardapioItems
+    .filter(i => i.id !== editingId && i.categoria === targetCat && (i.subcategoria === "Combos") === isCombo)
+    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+
+  let desiredPos = parseInt(targetOrd, 10);
+  if (isNaN(desiredPos) || desiredPos < 1) desiredPos = 1;
+  if (desiredPos > targetGroup.length + 1) desiredPos = targetGroup.length + 1;
+
+  // Realoca as ordens no grupo de destino:
+  // Itens antes de desiredPos ficam com idx + 1 (1 .. desiredPos - 1)
+  // O item atual ficará na desiredPos
+  // Itens a partir de desiredPos são deslocados (+1) para abrir espaço exato
+  targetGroup.forEach((it, idx) => {
+    let newOrd = idx + 1;
+    if (idx >= desiredPos - 1) {
+      newOrd = idx + 2;
+    }
+    if (it.ordem !== newOrd) {
       it.ordem = newOrd;
       updates.push(supabaseApp.from("cardapio").update({ ordem: newOrd }).eq("id", it.id));
-      nextAvailable = newOrd + 1;
-    } else {
-      nextAvailable = currentOrd + 1;
     }
+  });
+
+  if (updates.length > 0) {
+    await Promise.all(updates);
   }
 
-  return updates;
+  return desiredPos;
 }
 
 // Category Order Reordering Controls
@@ -570,15 +606,7 @@ function renderCardapioTable() {
   if (!tbody) return;
   tbody.innerHTML = "";
 
-  const typeFilterContainer = document.getElementById("type-filter-container");
-  if (typeFilterContainer) {
-    if (currentCategoryFilter === "all") {
-      typeFilterContainer.classList.add("hidden");
-    } else {
-      typeFilterContainer.classList.remove("hidden");
-    }
-  }
-
+  const isCombo = currentTypeFilter === "Combos";
   const searchVal = (document.getElementById("cardapio-search")?.value || "").toLowerCase().trim();
   
   const filtered = allCardapioItems.filter(item => {
@@ -588,100 +616,47 @@ function renderCardapioTable() {
       (item.subcategoria && item.subcategoria.toLowerCase().includes(searchVal));
     
     const matchCategory = currentCategoryFilter === "all" || item.categoria === currentCategoryFilter;
-    const matchType = currentTypeFilter === "all" || 
-      (currentTypeFilter === "Combos" ? item.subcategoria === "Combos" : item.subcategoria !== "Combos");
+    const matchType = (item.subcategoria === "Combos") === isCombo;
 
     return matchSearch && matchCategory && matchType;
   });
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400 font-medium">Nenhum item encontrado.</td></tr>';
+    const typeLabel = isCombo ? "combos especiais" : "itens individuais";
+    const catLabel = currentCategoryFilter === "all" ? "no cardápio" : `na categoria "${currentCategoryFilter}"`;
+    tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400 font-medium">Nenhum produto cadastrado em ${typeLabel} ${catLabel}.</td></tr>`;
     return;
   }
 
-  // Visualização de "Todos": não exibe controles de ordem e agrupa pela ordem das categorias
+  // Visualização de "Todos" (todas as categorias): agrupa por categoria
   if (currentCategoryFilter === "all") {
     filtered.sort((a, b) => {
       const catA = allCategoriesOrder.indexOf(a.categoria);
       const catB = allCategoriesOrder.indexOf(b.categoria);
       if (catA !== catB) return (catA === -1 ? 99 : catA) - (catB === -1 ? 99 : catB);
-      const isCombA = a.subcategoria === "Combos" ? 1 : 0;
-      const isCombB = b.subcategoria === "Combos" ? 1 : 0;
-      if (isCombA !== isCombB) return isCombA - isCombB;
       return (Number(a.ordem) || 0) - (Number(b.ordem) || 0);
     });
 
     filtered.forEach(item => {
-      renderCardapioRow(tbody, item, { isAllCategoryView: true });
+      renderCardapioRow(tbody, item, { 
+        isAllCategoryView: true,
+        displayOrder: item.ordem != null && Number(item.ordem) > 0 ? item.ordem : "—"
+      });
     });
     return;
   }
 
-  // Visualização de categoria específica: agrupa e ordena estritamente por tipagem
-  const individuais = filtered.filter(i => i.subcategoria !== "Combos")
-    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
-  const combos = filtered.filter(i => i.subcategoria === "Combos")
-    .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+  // Visualização de categoria específica (ex: Nutrição, Bebidas, Produtos Fechados): estritamente ordenada por ordem
+  filtered.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
 
-  if (currentTypeFilter === "all") {
-    if (individuais.length > 0) {
-      if (combos.length > 0) {
-        const headerTr = document.createElement("tr");
-        headerTr.className = "bg-panel-input/50 border-y border-panel-border";
-        headerTr.innerHTML = `
-          <td colspan="6" class="px-4 py-2 text-[11px] font-extrabold uppercase tracking-wider text-brand-400">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-sm">restaurant</span>
-              <span>🍽️ Itens Individuais (${individuais.length} itens)</span>
-            </div>
-          </td>
-        `;
-        tbody.appendChild(headerTr);
-      }
-      individuais.forEach((item, idx) => {
-        renderCardapioRow(tbody, item, {
-          isAllCategoryView: false,
-          isFirst: idx === 0,
-          isLast: idx === individuais.length - 1,
-          displayOrder: item.ordem != null ? item.ordem : (idx + 1)
-        });
-      });
-    }
-
-    if (combos.length > 0) {
-      if (individuais.length > 0) {
-        const headerTr = document.createElement("tr");
-        headerTr.className = "bg-panel-input/50 border-y border-panel-border";
-        headerTr.innerHTML = `
-          <td colspan="6" class="px-4 py-2 text-[11px] font-extrabold uppercase tracking-wider text-amber-400">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-sm">stars</span>
-              <span>⭐ Combos Especiais (${combos.length} itens)</span>
-            </div>
-          </td>
-        `;
-        tbody.appendChild(headerTr);
-      }
-      combos.forEach((item, idx) => {
-        renderCardapioRow(tbody, item, {
-          isAllCategoryView: false,
-          isFirst: idx === 0,
-          isLast: idx === combos.length - 1,
-          displayOrder: item.ordem != null ? item.ordem : (idx + 1)
-        });
-      });
-    }
-  } else {
-    const list = currentTypeFilter === "Combos" ? combos : individuais;
-    list.forEach((item, idx) => {
-      renderCardapioRow(tbody, item, {
-        isAllCategoryView: false,
-        isFirst: idx === 0,
-        isLast: idx === list.length - 1,
-        displayOrder: item.ordem != null ? item.ordem : (idx + 1)
-      });
+  filtered.forEach((item, idx) => {
+    renderCardapioRow(tbody, item, {
+      isAllCategoryView: false,
+      isFirst: idx === 0,
+      isLast: idx === filtered.length - 1,
+      displayOrder: item.ordem != null && Number(item.ordem) > 0 ? item.ordem : (idx + 1)
     });
-  }
+  });
 }
 
 // Filtros de Categoria
@@ -692,14 +667,6 @@ document.querySelectorAll(".btn-category-filter").forEach(btn => {
     });
     this.className = "btn-category-filter px-3 py-1.5 rounded-full text-xs font-bold bg-brand-500 text-white transition-all";
     currentCategoryFilter = this.getAttribute("data-cat");
-
-    // Reseta o filtro de tipo ao trocar de categoria
-    currentTypeFilter = "all";
-    document.querySelectorAll(".btn-type-filter").forEach(tb => {
-      tb.className = tb.getAttribute("data-type") === "all"
-        ? "btn-type-filter px-2.5 py-1 rounded-lg text-xs font-bold bg-brand-500 text-white transition-all"
-        : "btn-type-filter px-2.5 py-1 rounded-lg text-xs font-semibold bg-panel-input text-slate-300 hover:bg-panel-border transition-all";
-    });
 
     renderCardapioTable();
   });
@@ -719,11 +686,10 @@ document.querySelectorAll(".btn-type-filter").forEach(btn => {
 
 // Botão de Normalizar Sequência (1, 2, 3...)
 document.getElementById("btn-normalize-category-orders")?.addEventListener("click", () => {
-  if (currentCategoryFilter !== "all") {
-    normalizeCategoryOrders(currentCategoryFilter);
-  } else {
-    normalizeCategoryOrders(null);
-  }
+  normalizeCategoryOrders(
+    currentCategoryFilter !== "all" ? currentCategoryFilter : null,
+    currentTypeFilter !== "all" ? currentTypeFilter : null
+  );
 });
 
 document.getElementById("cardapio-search")?.addEventListener("input", renderCardapioTable);
@@ -736,7 +702,7 @@ function editCardapioItem(t) {
   document.getElementById("cardapio-name").value = t.nome;
   document.getElementById("cardapio-price").value = t.preco;
   if (document.getElementById("cardapio-order")) {
-    document.getElementById("cardapio-order").value = t.ordem != null ? t.ordem : 0;
+    document.getElementById("cardapio-order").value = t.ordem != null && Number(t.ordem) > 0 ? t.ordem : 1;
   }
   document.getElementById("cardapio-status").checked = t.status === "Ativo";
   cardapioImages = Array.isArray(t.imagens) && t.imagens.length > 0 ? [...t.imagens] : (t.imagem_url ? [t.imagem_url] : []);
@@ -777,9 +743,9 @@ function duplicateCardapioItem(t) {
   // Calcula a próxima ordem livre dentro daquela categoria e tipagem
   const isCombo = t.subcategoria === "Combos";
   const sameGroup = allCardapioItems.filter(i => i.categoria === t.categoria && (i.subcategoria === "Combos") === isCombo);
-  const maxOrd = sameGroup.reduce((max, i) => Math.max(max, Number(i.ordem) || 0), 0);
+  const nextOrd = sameGroup.length + 1;
   if (document.getElementById("cardapio-order")) {
-    document.getElementById("cardapio-order").value = String(maxOrd + 1);
+    document.getElementById("cardapio-order").value = String(nextOrd);
   }
 
   document.getElementById("cardapio-status").checked = true;
@@ -822,13 +788,13 @@ function clearCardapioForm() {
   }
 
   // Próxima ordem automática para o novo item
-  const cat = document.getElementById("cardapio-category")?.value || "Nutrição";
+  const cat = document.getElementById("cardapio-category")?.value || (currentCategoryFilter !== "all" ? currentCategoryFilter : "Nutrição");
   const sub = document.getElementById("cardapio-subcategory")?.value || "Produtos";
   const isCombo = sub === "Combos";
   const sameGroup = allCardapioItems.filter(i => i.categoria === cat && (i.subcategoria === "Combos") === isCombo);
-  const maxOrd = sameGroup.reduce((max, i) => Math.max(max, Number(i.ordem) || 0), 0);
+  const nextOrd = sameGroup.length + 1;
   if (document.getElementById("cardapio-order")) {
-    document.getElementById("cardapio-order").value = String(maxOrd + 1);
+    document.getElementById("cardapio-order").value = String(nextOrd);
   }
 
   cardapioImages = [];
@@ -848,9 +814,9 @@ document.getElementById("cardapio-category")?.addEventListener("change", () => {
     const sub = document.getElementById("cardapio-subcategory").value;
     const isCombo = sub === "Combos";
     const sameGroup = allCardapioItems.filter(i => i.categoria === cat && (i.subcategoria === "Combos") === isCombo);
-    const maxOrd = sameGroup.reduce((max, i) => Math.max(max, Number(i.ordem) || 0), 0);
+    const nextOrd = sameGroup.length + 1;
     if (document.getElementById("cardapio-order")) {
-      document.getElementById("cardapio-order").value = String(maxOrd + 1);
+      document.getElementById("cardapio-order").value = String(nextOrd);
     }
   }
 });
@@ -861,9 +827,9 @@ document.getElementById("cardapio-subcategory")?.addEventListener("change", () =
     const sub = document.getElementById("cardapio-subcategory").value;
     const isCombo = sub === "Combos";
     const sameGroup = allCardapioItems.filter(i => i.categoria === cat && (i.subcategoria === "Combos") === isCombo);
-    const maxOrd = sameGroup.reduce((max, i) => Math.max(max, Number(i.ordem) || 0), 0);
+    const nextOrd = sameGroup.length + 1;
     if (document.getElementById("cardapio-order")) {
-      document.getElementById("cardapio-order").value = String(maxOrd + 1);
+      document.getElementById("cardapio-order").value = String(nextOrd);
     }
   }
 });
@@ -881,7 +847,7 @@ if (formCardapio) {
       subcategoria: document.getElementById("cardapio-subcategory").value,
       nome: document.getElementById("cardapio-name").value.trim(),
       preco: parseFloat(document.getElementById("cardapio-price").value),
-      ordem: parseInt(document.getElementById("cardapio-order")?.value || "0", 10) || 0,
+      ordem: parseInt(document.getElementById("cardapio-order")?.value || "1", 10) || 1,
       status: document.getElementById("cardapio-status").checked ? "Ativo" : "Rascunho",
       imagem_url: cardapioImages[0] || "",
       imagens: cardapioImages,
@@ -905,33 +871,23 @@ if (formCardapio) {
     }
 
     try {
-      // Reordena automaticamente itens com ordens conflitantes (rebaixa itens existentes)
-      const orderUpdates = await adjustCardapioOrdersOnSave(
-        payload.ordem,
+      // Reordena o grupo de destino e obtém a posição final garantida (reordena itens conflitantes)
+      const finalOrder = await reorderCardapioOnEditOrSave(
         payload.categoria,
         payload.subcategoria,
+        payload.ordem,
         editingCardapioId
       );
-      if (orderUpdates.length > 0) {
-        await Promise.all(orderUpdates);
-      }
+      payload.ordem = finalOrder;
 
       if (editingCardapioId) {
         const { error: n } = await supabaseApp.from("cardapio").update(payload).eq("id", editingCardapioId);
         if (n) throw n;
-        if (orderUpdates.length > 0) {
-          showToast("Item atualizado e itens seguintes rebaixados com sucesso!");
-        } else {
-          showToast("Item atualizado com sucesso!");
-        }
+        showToast("Item atualizado e ordem reorganizada com sucesso!");
       } else {
         const { error: n } = await supabaseApp.from("cardapio").insert([payload]);
         if (n) throw n;
-        if (orderUpdates.length > 0) {
-          showToast("Novo item cadastrado e posições seguintes rebaixadas com sucesso!");
-        } else {
-          showToast("Novo item cadastrado no cardápio!");
-        }
+        showToast("Novo item cadastrado e inserido na sequência com sucesso!");
       }
       clearCardapioForm();
       await fetchCardapioItems();
@@ -953,10 +909,32 @@ btnCancelDeleteCardapio?.addEventListener("click", () => {
 btnConfirmDeleteCardapio?.addEventListener("click", async () => {
   if (deletingCardapioId) {
     try {
+      const itemToDelete = allCardapioItems.find(i => i.id === deletingCardapioId);
       const { error: t } = await supabaseApp.from("cardapio").delete().eq("id", deletingCardapioId);
       if (t) throw t;
-      showToast("Item excluído do cardápio.");
-      fetchCardapioItems();
+
+      // Reorganiza as posições dos itens restantes daquele tipo para manter 1..N consecutivo
+      if (itemToDelete) {
+        const isCombo = itemToDelete.subcategoria === "Combos";
+        const remaining = allCardapioItems
+          .filter(i => i.id !== deletingCardapioId && i.categoria === itemToDelete.categoria && (i.subcategoria === "Combos") === isCombo)
+          .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || (a.id > b.id ? 1 : -1));
+        
+        const updates = [];
+        remaining.forEach((it, idx) => {
+          const targetOrd = idx + 1;
+          if (it.ordem !== targetOrd) {
+            it.ordem = targetOrd;
+            updates.push(supabaseApp.from("cardapio").update({ ordem: targetOrd }).eq("id", it.id));
+          }
+        });
+        if (updates.length > 0) {
+          await Promise.all(updates);
+        }
+      }
+
+      showToast("Item excluído e posições reorganizadas com sucesso!");
+      await fetchCardapioItems();
     } catch (t) {
       console.error("Error deleting cardapio item:", t);
       alert("Erro ao deletar item: " + t.message);
