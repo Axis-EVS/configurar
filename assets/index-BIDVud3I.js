@@ -892,6 +892,13 @@ if (formCardapio) {
       payload.ordem = finalOrder;
 
       if (editingCardapioId) {
+        const originalItem = allCardapioItems.find(item => item.id === editingCardapioId);
+        if (originalItem) {
+          const oldList = [originalItem.imagem_url, ...(Array.isArray(originalItem.imagens) ? originalItem.imagens : [])].filter(Boolean);
+          const newList = [payload.imagem_url, ...(Array.isArray(payload.imagens) ? payload.imagens : [])].filter(Boolean);
+          const toDelete = oldList.filter(u => !newList.includes(u));
+          if (toDelete.length > 0) deleteStorageImages(toDelete);
+        }
         const { error: n } = await supabaseApp.from("cardapio").update(payload).eq("id", editingCardapioId);
         if (n) throw n;
         showToast("Item atualizado e ordem reorganizada com sucesso!");
@@ -921,6 +928,10 @@ btnConfirmDeleteCardapio?.addEventListener("click", async () => {
   if (deletingCardapioId) {
     try {
       const itemToDelete = allCardapioItems.find(i => i.id === deletingCardapioId);
+      if (itemToDelete) {
+        const toDelete = [itemToDelete.imagem_url, ...(Array.isArray(itemToDelete.imagens) ? itemToDelete.imagens : [])].filter(Boolean);
+        if (toDelete.length > 0) await deleteStorageImages(toDelete);
+      }
       const { error: t } = await supabaseApp.from("cardapio").delete().eq("id", deletingCardapioId);
       if (t) throw t;
 
@@ -1215,6 +1226,13 @@ if (formPrograma) {
       }
 
       if (editingProgramaId) {
+        const originalItem = allProgramasItems.find(item => item.id === editingProgramaId);
+        if (originalItem) {
+          const oldList = [originalItem.imagem_url, ...(Array.isArray(originalItem.imagens) ? originalItem.imagens : [])].filter(Boolean);
+          const newList = [payload.imagem_url, ...(Array.isArray(payload.imagens) ? payload.imagens : [])].filter(Boolean);
+          const toDelete = oldList.filter(u => !newList.includes(u));
+          if (toDelete.length > 0) deleteStorageImages(toDelete);
+        }
         const { error: i } = await supabaseApp.from("programas").update(payload).eq("id", editingProgramaId);
         if (i) throw i;
         if (orderUpdates.length > 0) {
@@ -1251,9 +1269,14 @@ btnCancelDeletePrograma?.addEventListener("click", () => {
 btnConfirmDeletePrograma?.addEventListener("click", async () => {
   if (deletingProgramaId) {
     try {
+      const itemToDelete = allProgramasItems.find(i => i.id === deletingProgramaId);
+      if (itemToDelete) {
+        const toDelete = [itemToDelete.imagem_url, ...(Array.isArray(itemToDelete.imagens) ? itemToDelete.imagens : [])].filter(Boolean);
+        if (toDelete.length > 0) await deleteStorageImages(toDelete);
+      }
       const { error: t } = await supabaseApp.from("programas").delete().eq("id", deletingProgramaId);
       if (t) throw t;
-      showToast("Programa excluído.");
+      showToast("Programa excluído e imagens descartadas.");
       fetchProgramasItems();
     } catch (t) {
       console.error("Error deleting program:", t);
@@ -1328,8 +1351,31 @@ async function fetchEspacoInfo() {
 
 async function saveEspacoInfo(t) {
   try {
-    const { data: e } = await supabaseApp.from("empresa").select("id").limit(1);
+    const { data: e } = await supabaseApp.from("empresa").select("*").limit(1);
     const hasRow = e && e.length > 0;
+
+    // Identifica e descarta imagens anteriores que foram substituídas ou apagadas
+    if (hasRow) {
+      const prev = e[0];
+      const imageKeys = [
+        "imagem_hero",
+        "imagem_sobre",
+        "imagem_destaque_shake",
+        "imagem_destaque_waffle",
+        "imagem_destaque_sopa",
+        "imagem_destaque_cha"
+      ];
+      const toDiscard = [];
+      imageKeys.forEach(k => {
+        if (prev[k] && t[k] !== undefined && prev[k] !== t[k]) {
+          toDiscard.push(prev[k]);
+        }
+      });
+      if (toDiscard.length > 0) {
+        await deleteStorageImages(toDiscard);
+      }
+    }
+
     let s;
     if (hasRow) {
       const id = e[0].id;
@@ -1407,10 +1453,105 @@ function setFormImagePreview(t, e) {
   }
 }
 
+// ==========================================
+// SUPABASE STORAGE MANAGEMENT & HIGH-RES OPTIMIZER
+// ==========================================
+function extractStoragePath(url) {
+  if (!url || typeof url !== "string") return null;
+  const marker = "/storage/v1/object/public/images/";
+  const idx = url.indexOf(marker);
+  if (idx !== -1) {
+    return decodeURIComponent(url.substring(idx + marker.length).split("?")[0]);
+  }
+  if (url.startsWith("uploads/")) {
+    return url.split("?")[0];
+  }
+  return null;
+}
+
+async function deleteStorageImages(urls) {
+  if (!urls) return;
+  const list = Array.isArray(urls) ? urls : [urls];
+  const paths = list
+    .map(u => extractStoragePath(u))
+    .filter(p => p && typeof p === "string" && p.startsWith("uploads/"));
+
+  if (paths.length === 0) return;
+  try {
+    console.log("[Storage] Descartando imagens antigas do Supabase Storage:", paths);
+    const { data, error } = await supabaseApp.storage.from("images").remove(paths);
+    if (error) {
+      console.warn("[Storage] Aviso ao remover imagens do storage:", error);
+    } else {
+      console.log("[Storage] Imagens antigas descartadas com sucesso:", data);
+    }
+  } catch (err) {
+    console.warn("[Storage] Erro ao deletar imagens do storage:", err);
+  }
+}
+
+async function processImageForHighResUpload(file) {
+  if (!file || !file.type || !file.type.startsWith("image/")) return file;
+  if (file.type === "image/svg+xml") return file;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      try {
+        const MAX_DIM = 900;
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d", { alpha: true });
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            const cleanName = (file.name || "imagem").replace(/\.[^/.]+$/, "") + ".webp";
+            const processedFile = new File([blob], cleanName, { type: "image/webp" });
+            resolve(processedFile);
+          },
+          "image/webp",
+          0.82
+        );
+      } catch (err) {
+        console.warn("[ProcessImage] Erro ao otimizar imagem, mantendo original:", err);
+        resolve(file);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(file);
+    };
+    img.src = objectUrl;
+  });
+}
+
 async function uploadImageFile(file, textId, statusId) {
   const statusEl = document.getElementById(statusId);
   if (!file) return;
-  const maxMb = 5;
+  const maxMb = 25; // Suporta fotos de alta resolução direto da câmera
   if (file.size > maxMb * 1024 * 1024) {
     if (statusEl) {
       statusEl.textContent = `❌ Arquivo muito grande. Máximo permitido: ${maxMb}MB.`;
@@ -1419,7 +1560,7 @@ async function uploadImageFile(file, textId, statusId) {
     alert(`O arquivo excede o limite de ${maxMb}MB. Reduza o tamanho antes de enviar.`);
     return;
   }
-  if (!["image/jpeg", "image/png", "image/webp", "image/jpg"].includes(file.type)) {
+  if (!file.type.startsWith("image/")) {
     if (statusEl) {
       statusEl.textContent = "❌ Formato inválido. Use JPG, PNG ou WebP.";
       statusEl.className = "text-xs text-red-400 mt-1 block font-medium";
@@ -1428,23 +1569,35 @@ async function uploadImageFile(file, textId, statusId) {
     return;
   }
 
+  const oldUrl = document.getElementById(textId)?.value;
+
   if (statusEl) {
-    statusEl.textContent = "⏳ Enviando imagem para a nuvem...";
+    statusEl.textContent = "⏳ Otimizando em alta resolução e enviando...";
     statusEl.className = "text-xs text-amber-400 mt-1 block font-medium";
   }
 
   try {
-    const ext = file.name.split(".").pop();
+    const optimizedFile = await processImageForHighResUpload(file);
+    const ext = optimizedFile.name.split(".").pop() || "webp";
     const filePath = `uploads/${Math.random().toString(36).substring(2)}-${Date.now()}.${ext}`;
-    const { data: c, error: u } = await supabaseApp.storage.from("images").upload(filePath, file);
+    const { data: c, error: u } = await supabaseApp.storage.from("images").upload(filePath, optimizedFile, {
+      cacheControl: "31536000, public, immutable",
+      upsert: false
+    });
     if (u) throw u;
     const { data: { publicUrl } } = supabaseApp.storage.from("images").getPublicUrl(filePath);
     setFormImagePreview(textId, publicUrl);
+
+    // Descarta a imagem antiga do Supabase Storage
+    if (oldUrl && oldUrl !== publicUrl) {
+      await deleteStorageImages(oldUrl);
+    }
+
     if (statusEl) {
-      statusEl.textContent = "✅ Imagem enviada com sucesso!";
+      statusEl.textContent = "✅ Imagem enviada e sincronizada com sucesso!";
       statusEl.className = "text-xs text-emerald-400 mt-1 block font-medium";
     }
-    showToast("Upload de foto concluído!");
+    showToast("Upload de foto concluído e imagem antiga descartada!");
   } catch (a) {
     console.error("[Upload] Falha no upload:", a);
     if (statusEl) {
@@ -1505,9 +1658,10 @@ function renderCardapioGallery() {
   list.querySelectorAll(".btn-cardapio-del-img").forEach(btn => {
     btn.addEventListener("click", () => {
       const idx = parseInt(btn.getAttribute("data-idx"), 10);
-      cardapioImages.splice(idx, 1);
+      const removed = cardapioImages.splice(idx, 1)[0];
+      if (removed) deleteStorageImages(removed);
       renderCardapioGallery();
-      showToast("Foto removida da galeria.");
+      showToast("Foto removida da galeria e descartada.");
     });
   });
 }
@@ -1561,9 +1715,10 @@ function renderProgramaGallery() {
   list.querySelectorAll(".btn-programa-del-img").forEach(btn => {
     btn.addEventListener("click", () => {
       const idx = parseInt(btn.getAttribute("data-idx"), 10);
-      programaImages.splice(idx, 1);
+      const removed = programaImages.splice(idx, 1)[0];
+      if (removed) deleteStorageImages(removed);
       renderProgramaGallery();
-      showToast("Foto removida da galeria.");
+      showToast("Foto removida da galeria e descartada.");
     });
   });
 }
@@ -1575,12 +1730,12 @@ async function uploadMultipleFiles(files, isCardapio = true) {
   const renderFn = isCardapio ? renderCardapioGallery : renderProgramaGallery;
 
   const validFiles = Array.from(files).filter(f => {
-    if (f.size > 5 * 1024 * 1024) {
-      alert(`O arquivo ${f.name} excede o limite de 5MB.`);
+    if (f.size > 25 * 1024 * 1024) {
+      alert(`O arquivo ${f.name} excede o limite de 25MB.`);
       return false;
     }
-    if (!["image/jpeg", "image/png", "image/webp", "image/jpg"].includes(f.type)) {
-      alert(`Tipo de arquivo não permitido para ${f.name}. Use JPG, PNG ou WebP.`);
+    if (!f.type.startsWith("image/")) {
+      alert(`Tipo de arquivo não permitido para ${f.name}. Use imagens JPG, PNG ou WebP.`);
       return false;
     }
     return true;
@@ -1589,16 +1744,20 @@ async function uploadMultipleFiles(files, isCardapio = true) {
   if (validFiles.length === 0) return;
 
   if (statusEl) {
-    statusEl.textContent = `⏳ Enviando ${validFiles.length} foto(s) para a nuvem...`;
+    statusEl.textContent = `⏳ Otimizando em alta resolução e enviando ${validFiles.length} foto(s)...`;
     statusEl.className = "text-xs text-amber-400 mt-1 block font-medium";
   }
 
   let uploadedCount = 0;
   for (const file of validFiles) {
     try {
-      const ext = file.name.split(".").pop();
+      const optimizedFile = await processImageForHighResUpload(file);
+      const ext = optimizedFile.name.split(".").pop() || "webp";
       const filePath = `uploads/${Math.random().toString(36).substring(2)}-${Date.now()}.${ext}`;
-      const { data: c, error: u } = await supabaseApp.storage.from("images").upload(filePath, file);
+      const { data: c, error: u } = await supabaseApp.storage.from("images").upload(filePath, optimizedFile, {
+        cacheControl: "31536000, public, immutable",
+        upsert: false
+      });
       if (u) throw u;
       const { data: { publicUrl } } = supabaseApp.storage.from("images").getPublicUrl(filePath);
       targetArray.push(publicUrl);
@@ -1610,7 +1769,7 @@ async function uploadMultipleFiles(files, isCardapio = true) {
 
   renderFn();
   if (statusEl) {
-    statusEl.textContent = `✅ ${uploadedCount} foto(s) adicionada(s) com sucesso!`;
+    statusEl.textContent = `✅ ${uploadedCount} foto(s) adicionada(s) em alta resolução!`;
     statusEl.className = "text-xs text-emerald-400 mt-1 block font-medium";
     setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 4000);
   }
@@ -1721,7 +1880,7 @@ function setupUploads() {
     });
   }
 
-  // Remove buttons for single image inputs
+  // Remove buttons for single image inputs (com descarte no Supabase Storage)
   [
     { buttonId: "btn-remove-hero-image", inputId: "hero-image", fileInputId: "hero-image-file" },
     { buttonId: "btn-remove-about-image", inputId: "about-image", fileInputId: "about-image-file" },
@@ -1733,6 +1892,8 @@ function setupUploads() {
     const btn = document.getElementById(item.buttonId);
     if (btn) {
       btn.addEventListener("click", () => {
+        const oldVal = document.getElementById(item.inputId)?.value;
+        if (oldVal) deleteStorageImages(oldVal);
         setFormImagePreview(item.inputId, "");
         const fileIn = document.getElementById(item.fileInputId);
         if (fileIn) fileIn.value = "";
@@ -2204,10 +2365,265 @@ function initAdminApp() {
   checkAuthSession();
   setupUploads();
   setupAvaliacoesListeners();
+  setupImageOptimizationListeners();
 }
 
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initAdminApp);
 } else {
   initAdminApp();
+}
+
+
+function setupImageOptimizationListeners() {
+  const btnOpen = document.getElementById("btn-optimize-images");
+  const modal = document.getElementById("optimize-images-modal");
+  const btnClose = document.getElementById("btn-close-optimize-modal");
+  const btnCancel = document.getElementById("btn-cancel-optimize");
+  const btnStart = document.getElementById("btn-start-optimize");
+
+  const statusText = document.getElementById("opt-status-text");
+  const progressBar = document.getElementById("opt-progress-bar");
+  const itemsCount = document.getElementById("opt-items-count");
+  const savingsText = document.getElementById("opt-savings-text");
+  const logBox = document.getElementById("opt-log");
+
+  if (!btnOpen || !modal) return;
+
+  function openModal() {
+    modal.classList.remove("hidden");
+  }
+
+  function closeModal() {
+    modal.classList.add("hidden");
+  }
+
+  btnOpen.addEventListener("click", openModal);
+  btnClose?.addEventListener("click", closeModal);
+  btnCancel?.addEventListener("click", closeModal);
+
+  let isOptimizing = false;
+
+  function appendLog(msg, isSuccess) {
+    if (!logBox) return;
+    logBox.classList.remove("hidden");
+    const div = document.createElement("div");
+    div.className = isSuccess ? "text-emerald-400" : "text-slate-400";
+    div.textContent = msg;
+    logBox.appendChild(div);
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  async function convertUrlToWebpBlob(imageUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const MAX_DIM = 900;
+          let width = img.naturalWidth || img.width;
+          let height = img.naturalHeight || img.height;
+
+          if (width > MAX_DIM || height > MAX_DIM) {
+            if (width > height) {
+              height = Math.round((height * MAX_DIM) / width);
+              width = MAX_DIM;
+            } else {
+              width = Math.round((width * MAX_DIM) / height);
+              height = MAX_DIM;
+            }
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d", { alpha: true });
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              if (blob) resolve(blob);
+              else reject(new Error("Falha ao exportar WebP via canvas"));
+            },
+            "image/webp",
+            0.82
+          );
+        } catch (e) {
+          reject(e);
+        }
+      };
+      img.onerror = () => reject(new Error("Falha ao carregar imagem para conversão"));
+      const urlWithNoCache = imageUrl.includes("?") ? (imageUrl + "&_t=" + Date.now()) : (imageUrl + "?_t=" + Date.now());
+      img.src = urlWithNoCache;
+    });
+  }
+
+  btnStart?.addEventListener("click", async () => {
+    if (isOptimizing) return;
+    isOptimizing = true;
+    btnStart.disabled = true;
+    btnStart.classList.add("opacity-50", "cursor-not-allowed");
+    if (btnCancel) btnCancel.disabled = true;
+
+    try {
+      statusText.textContent = "Buscando produtos e fotos no Supabase...";
+      statusText.className = "text-amber-400 font-bold";
+      appendLog("Iniciando varredura no Supabase...");
+
+      const [cardapioRes, programasRes] = await Promise.all([
+        supabaseApp.from("cardapio").select("id, nome, imagem_url, imagens"),
+        supabaseApp.from("programas").select("id, nome, imagem_url, imagens")
+      ]);
+
+      if (cardapioRes.error) throw cardapioRes.error;
+      if (programasRes.error) throw programasRes.error;
+
+      const cardapioItems = cardapioRes.data || [];
+      const programasItems = programasRes.data || [];
+
+      const tasks = [];
+      const isSupabaseImage = (url) => typeof url === "string" && url.includes("/storage/v1/object/public/images/");
+
+      cardapioItems.forEach(item => {
+        const imgs = (item.imagens && Array.isArray(item.imagens) && item.imagens.length > 0) ? item.imagens : (item.imagem_url ? [item.imagem_url] : []);
+        imgs.forEach((imgUrl, idx) => {
+          if (isSupabaseImage(imgUrl)) {
+            tasks.push({
+              table: "cardapio",
+              recordId: item.id,
+              name: item.nome,
+              imgIndex: idx,
+              allImgs: imgs,
+              url: imgUrl
+            });
+          }
+        });
+      });
+
+      programasItems.forEach(item => {
+        const imgs = (item.imagens && Array.isArray(item.imagens) && item.imagens.length > 0) ? item.imagens : (item.imagem_url ? [item.imagem_url] : []);
+        imgs.forEach((imgUrl, idx) => {
+          if (isSupabaseImage(imgUrl)) {
+            tasks.push({
+              table: "programas",
+              recordId: item.id,
+              name: item.nome,
+              imgIndex: idx,
+              allImgs: imgs,
+              url: imgUrl
+            });
+          }
+        });
+      });
+
+      if (tasks.length === 0) {
+        statusText.textContent = "Nenhuma foto pendente de otimização encontrada!";
+        statusText.className = "text-emerald-400 font-bold";
+        appendLog("Todas as fotos já estão otimizadas ou são externas.");
+        return;
+      }
+
+      appendLog("Encontradas " + tasks.length + " foto(s) para otimização turbo.");
+      let processed = 0;
+      let totalOldBytes = 0;
+      let totalNewBytes = 0;
+
+      for (let i = 0; i < tasks.length; i++) {
+        const t = tasks[i];
+        const pct = Math.round(((i + 1) / tasks.length) * 100);
+        statusText.textContent = "Otimizando " + (i + 1) + "/" + tasks.length + ": " + t.name + "...";
+        progressBar.style.width = pct + "%";
+        itemsCount.textContent = (i + 1) + " de " + tasks.length + " fotos";
+
+        try {
+          let originalSize = 0;
+          try {
+            const head = await fetch(t.url, { method: "HEAD" });
+            originalSize = Number(head.headers.get("content-length")) || 0;
+          } catch(e) {}
+
+          if (originalSize > 0 && originalSize < 70 * 1024 && t.url.endsWith(".webp")) {
+            appendLog("⏭️ " + t.name + ": Já é WebP leve (" + (originalSize/1024).toFixed(0) + " KB). Mantido.");
+            processed++;
+            continue;
+          }
+
+          const webpBlob = await convertUrlToWebpBlob(t.url);
+          const newSize = webpBlob.size;
+          totalOldBytes += (originalSize || newSize * 4);
+          totalNewBytes += newSize;
+
+          const savedKb = ((originalSize - newSize) / 1024).toFixed(0);
+          const newPath = "uploads/turbo-" + Math.random().toString(36).substring(2) + "-" + Date.now() + ".webp";
+
+          const { error: upErr } = await supabaseApp.storage.from("images").upload(newPath, webpBlob, {
+            contentType: "image/webp",
+            cacheControl: "31536000, public, immutable",
+            upsert: false
+          });
+
+          if (upErr) throw upErr;
+
+          const { data: { publicUrl: newPublicUrl } } = supabaseApp.storage.from("images").getPublicUrl(newPath);
+
+          const updatedImgs = [...t.allImgs];
+          updatedImgs[t.imgIndex] = newPublicUrl;
+
+          const updatePayload = {
+            imagem_url: updatedImgs[0] || null,
+            imagens: updatedImgs
+          };
+
+          const { error: dbErr } = await supabaseApp
+            .from(t.table)
+            .update(updatePayload)
+            .eq("id", t.recordId);
+
+          if (dbErr) throw dbErr;
+
+          await deleteStorageImages(t.url);
+
+          if (t.table === "cardapio" && Array.isArray(allCardapioItems)) {
+            const local = allCardapioItems.find(c => c.id === t.recordId);
+            if (local) {
+              local.imagem_url = updatePayload.imagem_url;
+              local.imagens = updatePayload.imagens;
+            }
+          }
+
+          processed++;
+          appendLog("✅ " + t.name + ": " + (originalSize/1024).toFixed(0) + "KB ➔ " + (newSize/1024).toFixed(0) + "KB (Economia: " + savedKb + "KB)", true);
+          const currentSavedMb = Math.max(0, (totalOldBytes - totalNewBytes) / (1024 * 1024)).toFixed(1);
+          savingsText.textContent = currentSavedMb + " MB economizados";
+        } catch(taskErr) {
+          console.error("Falha ao otimizar", t.name, taskErr);
+          appendLog("⚠️ " + t.name + ": Erro ao processar (" + (taskErr.message || taskErr) + ")");
+        }
+      }
+
+      const totalSavedMb = Math.max(0, (totalOldBytes - totalNewBytes) / (1024 * 1024)).toFixed(1);
+      statusText.textContent = "✅ Concluído! " + processed + " fotos otimizadas com sucesso!";
+      statusText.className = "text-emerald-400 font-bold";
+      savingsText.textContent = totalSavedMb + " MB economizados!";
+      appendLog("🎉 Otimização concluída! Todas as fotos agora são WebP leves com cache de 1 ano.");
+      showToast("Otimização Turbo concluída! " + totalSavedMb + " MB economizados no cardápio.");
+      
+      if (typeof renderCardapioTable === "function") {
+        renderCardapioTable();
+      }
+    } catch(err) {
+      console.error("[Otimizador Turbo] Erro geral:", err);
+      statusText.textContent = "❌ Erro: " + err.message;
+      statusText.className = "text-red-400 font-bold";
+      appendLog("❌ Erro geral: " + err.message);
+      alert("Erro durante a otimização: " + err.message);
+    } finally {
+      isOptimizing = false;
+      btnStart.disabled = false;
+      btnStart.classList.remove("opacity-50", "cursor-not-allowed");
+      if (btnCancel) btnCancel.disabled = false;
+    }
+  });
 }
