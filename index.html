@@ -297,10 +297,6 @@
                         <p class="text-slate-400 text-xs sm:text-sm mt-1">Cadastre e edite shakes, chás funcionais, refeições e combos.</p>
                     </div>
                     <div class="flex items-center gap-2.5 shrink-0 flex-wrap">
-                        <button id="btn-optimize-images" type="button" class="btn-trigger-optimize-images inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold rounded-xl text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer" title="Comprime todas as fotos pesadas existentes no Supabase em WebP ultraleve">
-                            <span class="material-symbols-outlined text-lg">bolt</span>
-                            <span>⚡ Otimizar Fotos (Turbo)</span>
-                        </button>
                         <button id="btn-new-cardapio" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 shrink-0 cursor-pointer">
                             <span class="material-symbols-outlined text-lg">add</span>
                             <span>Novo Item</span>
@@ -529,10 +525,6 @@
                         <p class="text-slate-400 text-xs sm:text-sm mt-1">Gerencie os planos de transformação, desafios e acompanhamentos.</p>
                     </div>
                     <div class="flex items-center gap-2.5 shrink-0 flex-wrap">
-                        <button type="button" class="btn-trigger-optimize-images inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold rounded-xl text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer" title="Comprime todas as fotos da página inicial, cardápio e programas em WebP ultraleve">
-                            <span class="material-symbols-outlined text-lg">bolt</span>
-                            <span>⚡ Otimizar Fotos do Site</span>
-                        </button>
                         <button id="btn-new-programa" class="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl font-bold text-xs sm:text-sm shadow-md transition-all active:scale-95 shrink-0 cursor-pointer">
                             <span class="material-symbols-outlined text-lg">add</span>
                             <span>Novo Programa</span>
@@ -676,10 +668,6 @@
                         <h2 class="font-display text-2xl sm:text-3xl font-bold text-white">Informações do Espaço</h2>
                         <p class="text-slate-400 text-xs sm:text-sm mt-1">Configure os textos de apresentação, fotos da capa, sobre nós e destaques da página inicial.</p>
                     </div>
-                    <button type="button" class="btn-trigger-optimize-images inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold rounded-xl text-xs sm:text-sm shadow-md transition-all active:scale-95 cursor-pointer shrink-0" title="Comprime todas as fotos da página inicial, cardápio e programas em WebP ultraleve">
-                        <span class="material-symbols-outlined text-lg">bolt</span>
-                        <span>⚡ Otimizar Fotos do Site</span>
-                    </button>
                 </div>
 
                 <!-- Feedback Banner -->
@@ -1306,56 +1294,6 @@
                     </button>
                 </div>
             </form>
-        </div>
-    </div>
-
-
-    <!-- Modal: Otimizador Turbo de Fotos -->
-    <div id="optimize-images-modal" class="hidden fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 p-4">
-        <div class="bg-panel-surface border border-panel-border rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-5 shadow-2xl relative">
-            <div class="flex items-center justify-between border-b border-panel-border pb-4">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                        <span class="material-symbols-outlined text-2xl">bolt</span>
-                    </div>
-                    <div>
-                        <h3 class="text-lg font-bold text-white">Otimizador Turbo de Fotos</h3>
-                        <p class="text-xs text-slate-400">Acelere a vitrine comprimindo fotos no Supabase</p>
-                    </div>
-                </div>
-                <button id="btn-close-optimize-modal" class="text-slate-400 hover:text-white p-1 rounded-lg">
-                    <span class="material-symbols-outlined text-xl">close</span>
-                </button>
-            </div>
-            <div class="space-y-4 text-xs text-slate-300">
-                <p class="leading-relaxed">
-                    Este recurso analisa todas as fotos do site cadastradas no Supabase — incluindo <strong>Página Inicial</strong> (Destaques, Sobre Nós, Hero), <strong>Cardápio</strong> e <strong>Programas</strong> —, converte arquivos pesados para formato <strong>WebP ultra-otimizado (~40KB)</strong> e atualiza o Supabase Storage com cache de 1 ano.
-                </p>
-                <div class="p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-2">
-                    <div class="flex justify-between text-slate-400">
-                        <span>Status:</span>
-                        <span id="opt-status-text" class="text-amber-400 font-bold">Pronto para iniciar</span>
-                    </div>
-                    <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
-                        <div id="opt-progress-bar" class="bg-gradient-to-r from-amber-500 to-emerald-400 h-full w-0 transition-all duration-300"></div>
-                    </div>
-                    <div class="flex justify-between text-[11px] text-slate-400">
-                        <span id="opt-items-count">0 itens processados</span>
-                        <span id="opt-savings-text" class="text-emerald-400 font-bold">0 MB economizados</span>
-                    </div>
-                </div>
-                <div id="opt-log" class="max-h-36 overflow-y-auto space-y-1 p-2 rounded-xl bg-slate-950 text-[11px] font-mono text-slate-400 hidden">
-                </div>
-            </div>
-            <div class="flex items-center justify-end gap-3 pt-2 border-t border-panel-border">
-                <button id="btn-cancel-optimize" class="px-5 py-2.5 bg-panel-input hover:bg-slate-700 text-slate-300 rounded-xl font-bold text-xs">
-                    Fechar
-                </button>
-                <button id="btn-start-optimize" class="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-extrabold rounded-xl text-xs shadow-md flex items-center gap-2 cursor-pointer">
-                    <span class="material-symbols-outlined text-base">play_arrow</span>
-                    <span>Iniciar Otimização</span>
-                </button>
-            </div>
         </div>
     </div>
 

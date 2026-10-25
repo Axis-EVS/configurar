@@ -279,6 +279,42 @@ async function fetchCardapioItems() {
     if (e) throw e;
     allCardapioItems = t || [];
 
+    // Auto-cura das imagens corrompidas do cardápio (NRG e Herbal Concentrate)
+    const brokenMap = {
+      44: {
+        brokenUrlPart: "o8u983vn08-1791904693314.png",
+        fixedImgs: [
+          "https://cnqebzxxwwsabahbslpd.supabase.co/storage/v1/object/public/images/uploads/turbo-76tv1o7yt0q-1792892253988.webp",
+          "https://cnqebzxxwwsabahbslpd.supabase.co/storage/v1/object/public/images/uploads/turbo-m63ma4lvn9g-1792892255126.webp"
+        ]
+      },
+      45: {
+        brokenUrlPart: "pl9lrevbeib-1791904971141.png",
+        fixedImgs: [
+          "https://cnqebzxxwwsabahbslpd.supabase.co/storage/v1/object/public/images/uploads/turbo-ahm3sz3mqrr-1792892261922.webp",
+          "https://cnqebzxxwwsabahbslpd.supabase.co/storage/v1/object/public/images/uploads/turbo-cq73ly107gj-1792892263060.webp"
+        ]
+      }
+    };
+    for (const [idStr, fix] of Object.entries(brokenMap)) {
+      const id = Number(idStr);
+      const item = allCardapioItems.find(c => c.id === id);
+      if (item) {
+        const hasBroken = (item.imagem_url && item.imagem_url.includes(fix.brokenUrlPart)) ||
+          (Array.isArray(item.imagens) && item.imagens.some(u => u && u.includes(fix.brokenUrlPart)));
+        if (hasBroken) {
+          item.imagem_url = fix.fixedImgs[0];
+          item.imagens = [...fix.fixedImgs];
+          supabaseApp.from("cardapio").update({
+            imagem_url: fix.fixedImgs[0],
+            imagens: fix.fixedImgs
+          }).eq("id", id).then(({ error }) => {
+            if (!error) console.log(`[AutoRepair] Produto id=${id} reparado no Supabase!`);
+          });
+        }
+      }
+    }
+
     // Verificação de integridade das sequências na primeira carga (corrige 0s, duplicados e sequências quebradas)
     if (!isInitialCardapioNormalized && allCardapioItems.length > 0) {
       let needsFix = false;
@@ -2365,7 +2401,6 @@ function initAdminApp() {
   checkAuthSession();
   setupUploads();
   setupAvaliacoesListeners();
-  setupImageOptimizationListeners();
 }
 
 if (document.readyState === "loading") {
@@ -2374,307 +2409,3 @@ if (document.readyState === "loading") {
   initAdminApp();
 }
 
-
-function setupImageOptimizationListeners() {
-  const triggerBtns = document.querySelectorAll(".btn-trigger-optimize-images, #btn-optimize-images");
-  const modal = document.getElementById("optimize-images-modal");
-  const btnClose = document.getElementById("btn-close-optimize-modal");
-  const btnCancel = document.getElementById("btn-cancel-optimize");
-  const btnStart = document.getElementById("btn-start-optimize");
-
-  const statusText = document.getElementById("opt-status-text");
-  const progressBar = document.getElementById("opt-progress-bar");
-  const itemsCount = document.getElementById("opt-items-count");
-  const savingsText = document.getElementById("opt-savings-text");
-  const logBox = document.getElementById("opt-log");
-
-  if (!modal) return;
-
-  function openModal() {
-    modal.classList.remove("hidden");
-  }
-
-  function closeModal() {
-    modal.classList.add("hidden");
-  }
-
-  triggerBtns.forEach(btn => btn.addEventListener("click", openModal));
-  btnClose?.addEventListener("click", closeModal);
-  btnCancel?.addEventListener("click", closeModal);
-
-  let isOptimizing = false;
-
-  function appendLog(msg, isSuccess) {
-    if (!logBox) return;
-    logBox.classList.remove("hidden");
-    const div = document.createElement("div");
-    div.className = isSuccess ? "text-emerald-400" : "text-slate-400";
-    div.textContent = msg;
-    logBox.appendChild(div);
-    logBox.scrollTop = logBox.scrollHeight;
-  }
-
-  async function convertUrlToWebpBlob(imageUrl) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        try {
-          const MAX_DIM = 900;
-          let width = img.naturalWidth || img.width;
-          let height = img.naturalHeight || img.height;
-
-          if (width > MAX_DIM || height > MAX_DIM) {
-            if (width > height) {
-              height = Math.round((height * MAX_DIM) / width);
-              width = MAX_DIM;
-            } else {
-              width = Math.round((width * MAX_DIM) / height);
-              height = MAX_DIM;
-            }
-          }
-
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d", { alpha: true });
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = "high";
-          ctx.drawImage(img, 0, 0, width, height);
-
-          canvas.toBlob(
-            (blob) => {
-              if (blob) resolve(blob);
-              else reject(new Error("Falha ao exportar WebP via canvas"));
-            },
-            "image/webp",
-            0.82
-          );
-        } catch (e) {
-          reject(e);
-        }
-      };
-      img.onerror = () => reject(new Error("Falha ao carregar imagem para conversão"));
-      const urlWithNoCache = imageUrl.includes("?") ? (imageUrl + "&_t=" + Date.now()) : (imageUrl + "?_t=" + Date.now());
-      img.src = urlWithNoCache;
-    });
-  }
-
-  btnStart?.addEventListener("click", async () => {
-    if (isOptimizing) return;
-    isOptimizing = true;
-    btnStart.disabled = true;
-    btnStart.classList.add("opacity-50", "cursor-not-allowed");
-    if (btnCancel) btnCancel.disabled = true;
-
-    try {
-      statusText.textContent = "Buscando produtos e fotos no Supabase...";
-      statusText.className = "text-amber-400 font-bold";
-      appendLog("Iniciando varredura no Supabase...");
-
-      const [cardapioRes, programasRes, empresaRes] = await Promise.all([
-        supabaseApp.from("cardapio").select("id, nome, imagem_url, imagens"),
-        supabaseApp.from("programas").select("id, nome, imagem_url, imagens"),
-        supabaseApp.from("empresa").select("id, imagem_hero, imagem_sobre, imagem_destaque_shake, imagem_destaque_waffle, imagem_destaque_sopa, imagem_destaque_cha, imagem_logo").limit(1).maybeSingle()
-      ]);
-
-      if (cardapioRes.error) throw cardapioRes.error;
-      if (programasRes.error) throw programasRes.error;
-
-      const cardapioItems = cardapioRes.data || [];
-      const programasItems = programasRes.data || [];
-      const empresaData = empresaRes.data || null;
-
-      const tasks = [];
-      const isSupabaseImage = (url) => typeof url === "string" && url.includes("/storage/v1/object/public/images/");
-
-      // 1. Fotos da Página Inicial (Tabela Empresa: Destaques, Sobre Nós, Hero)
-      if (empresaData) {
-        const empFields = [
-          { key: "imagem_destaque_shake", label: "Página Inicial (Destaque Shake)" },
-          { key: "imagem_destaque_waffle", label: "Página Inicial (Destaque Waffle)" },
-          { key: "imagem_destaque_sopa", label: "Página Inicial (Destaque Sopa)" },
-          { key: "imagem_destaque_cha", label: "Página Inicial (Destaque Chá)" },
-          { key: "imagem_sobre", label: "Página Inicial (Foto Sobre Nós)" },
-          { key: "imagem_hero", label: "Página Inicial (Foto Hero)" },
-          { key: "imagem_logo", label: "Logo Institucional" }
-        ];
-        empFields.forEach(f => {
-          const url = empresaData[f.key];
-          if (isSupabaseImage(url)) {
-            tasks.push({
-              table: "empresa",
-              recordId: empresaData.id,
-              name: f.label,
-              fieldKey: f.key,
-              url: url
-            });
-          }
-        });
-      }
-
-      // 2. Fotos de Programas
-      programasItems.forEach(item => {
-        const imgs = (item.imagens && Array.isArray(item.imagens) && item.imagens.length > 0) ? item.imagens : (item.imagem_url ? [item.imagem_url] : []);
-        imgs.forEach((imgUrl, idx) => {
-          if (isSupabaseImage(imgUrl)) {
-            tasks.push({
-              table: "programas",
-              recordId: item.id,
-              name: "Programa: " + item.nome,
-              imgIndex: idx,
-              allImgs: imgs,
-              url: imgUrl
-            });
-          }
-        });
-      });
-
-      // 3. Fotos do Cardápio (Produtos e Combos)
-      cardapioItems.forEach(item => {
-        const imgs = (item.imagens && Array.isArray(item.imagens) && item.imagens.length > 0) ? item.imagens : (item.imagem_url ? [item.imagem_url] : []);
-        imgs.forEach((imgUrl, idx) => {
-          if (isSupabaseImage(imgUrl)) {
-            tasks.push({
-              table: "cardapio",
-              recordId: item.id,
-              name: "Cardápio: " + item.nome,
-              imgIndex: idx,
-              allImgs: imgs,
-              url: imgUrl
-            });
-          }
-        });
-      });
-
-      if (tasks.length === 0) {
-        statusText.textContent = "Nenhuma foto pendente de otimização encontrada!";
-        statusText.className = "text-emerald-400 font-bold";
-        appendLog("Todas as fotos já estão otimizadas ou são externas.");
-        return;
-      }
-
-      appendLog("Encontradas " + tasks.length + " foto(s) para otimização turbo.");
-      let processed = 0;
-      let totalOldBytes = 0;
-      let totalNewBytes = 0;
-
-      for (let i = 0; i < tasks.length; i++) {
-        const t = tasks[i];
-        const pct = Math.round(((i + 1) / tasks.length) * 100);
-        statusText.textContent = "Otimizando " + (i + 1) + "/" + tasks.length + ": " + t.name + "...";
-        progressBar.style.width = pct + "%";
-        itemsCount.textContent = (i + 1) + " de " + tasks.length + " fotos";
-
-        try {
-          let originalSize = 0;
-          try {
-            const head = await fetch(t.url, { method: "HEAD" });
-            originalSize = Number(head.headers.get("content-length")) || 0;
-          } catch(e) {}
-
-          if (originalSize > 0 && originalSize < 70 * 1024 && t.url.endsWith(".webp")) {
-            appendLog("⏭️ " + t.name + ": Já é WebP leve (" + (originalSize/1024).toFixed(0) + " KB). Mantido.");
-            processed++;
-            continue;
-          }
-
-          const webpBlob = await convertUrlToWebpBlob(t.url);
-          const newSize = webpBlob.size;
-          totalOldBytes += (originalSize || newSize * 4);
-          totalNewBytes += newSize;
-
-          const savedKb = ((originalSize - newSize) / 1024).toFixed(0);
-          const newPath = "uploads/turbo-" + Math.random().toString(36).substring(2) + "-" + Date.now() + ".webp";
-
-          const { error: upErr } = await supabaseApp.storage.from("images").upload(newPath, webpBlob, {
-            contentType: "image/webp",
-            cacheControl: "31536000, public, immutable",
-            upsert: false
-          });
-
-          if (upErr) throw upErr;
-
-          const { data: { publicUrl: newPublicUrl } } = supabaseApp.storage.from("images").getPublicUrl(newPath);
-
-          if (t.table === "empresa") {
-            const { error: dbErr } = await supabaseApp
-              .from("empresa")
-              .update({ [t.fieldKey]: newPublicUrl })
-              .eq("id", t.recordId);
-
-            if (dbErr) throw dbErr;
-
-            const previewMap = {
-              "imagem_hero": "hero-image",
-              "imagem_sobre": "about-image",
-              "imagem_destaque_shake": "destaque-shake-image",
-              "imagem_destaque_waffle": "destaque-waffle-image",
-              "imagem_destaque_sopa": "destaque-sopa-image",
-              "imagem_destaque_cha": "destaque-cha-image"
-            };
-            const inputId = previewMap[t.fieldKey];
-            if (inputId && typeof setFormImagePreview === "function") {
-              setFormImagePreview(inputId, newPublicUrl);
-            }
-          } else {
-            const updatedImgs = [...t.allImgs];
-            updatedImgs[t.imgIndex] = newPublicUrl;
-
-            const updatePayload = {
-              imagem_url: updatedImgs[0] || null,
-              imagens: updatedImgs
-            };
-
-            const { error: dbErr } = await supabaseApp
-              .from(t.table)
-              .update(updatePayload)
-              .eq("id", t.recordId);
-
-            if (dbErr) throw dbErr;
-
-            if (t.table === "cardapio" && Array.isArray(allCardapioItems)) {
-              const local = allCardapioItems.find(c => c.id === t.recordId);
-              if (local) {
-                local.imagem_url = updatePayload.imagem_url;
-                local.imagens = updatePayload.imagens;
-              }
-            }
-          }
-
-          await deleteStorageImages(t.url);
-
-          processed++;
-          appendLog("✅ " + t.name + ": " + (originalSize/1024).toFixed(0) + "KB ➔ " + (newSize/1024).toFixed(0) + "KB (Economia: " + savedKb + "KB)", true);
-          const currentSavedMb = Math.max(0, (totalOldBytes - totalNewBytes) / (1024 * 1024)).toFixed(1);
-          savingsText.textContent = currentSavedMb + " MB economizados";
-        } catch(taskErr) {
-          console.error("Falha ao otimizar", t.name, taskErr);
-          appendLog("⚠️ " + t.name + ": Erro ao processar (" + (taskErr.message || taskErr) + ")");
-        }
-      }
-
-      const totalSavedMb = Math.max(0, (totalOldBytes - totalNewBytes) / (1024 * 1024)).toFixed(1);
-      statusText.textContent = "✅ Concluído! " + processed + " fotos otimizadas com sucesso!";
-      statusText.className = "text-emerald-400 font-bold";
-      savingsText.textContent = totalSavedMb + " MB economizados!";
-      appendLog("🎉 Otimização concluída! Todas as fotos agora são WebP leves com cache de 1 ano.");
-      showToast("Otimização Turbo concluída! " + totalSavedMb + " MB economizados em todo o site (Página Inicial, Cardápio e Programas).");
-      
-      if (typeof renderCardapioTable === "function") {
-        renderCardapioTable();
-      }
-    } catch(err) {
-      console.error("[Otimizador Turbo] Erro geral:", err);
-      statusText.textContent = "❌ Erro: " + err.message;
-      statusText.className = "text-red-400 font-bold";
-      appendLog("❌ Erro geral: " + err.message);
-      alert("Erro durante a otimização: " + err.message);
-    } finally {
-      isOptimizing = false;
-      btnStart.disabled = false;
-      btnStart.classList.remove("opacity-50", "cursor-not-allowed");
-      if (btnCancel) btnCancel.disabled = false;
-    }
-  });
-}
