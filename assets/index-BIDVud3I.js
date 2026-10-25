@@ -2376,7 +2376,7 @@ if (document.readyState === "loading") {
 
 
 function setupImageOptimizationListeners() {
-  const btnOpen = document.getElementById("btn-optimize-images");
+  const triggerBtns = document.querySelectorAll(".btn-trigger-optimize-images, #btn-optimize-images");
   const modal = document.getElementById("optimize-images-modal");
   const btnClose = document.getElementById("btn-close-optimize-modal");
   const btnCancel = document.getElementById("btn-cancel-optimize");
@@ -2388,7 +2388,7 @@ function setupImageOptimizationListeners() {
   const savingsText = document.getElementById("opt-savings-text");
   const logBox = document.getElementById("opt-log");
 
-  if (!btnOpen || !modal) return;
+  if (!modal) return;
 
   function openModal() {
     modal.classList.remove("hidden");
@@ -2398,7 +2398,7 @@ function setupImageOptimizationListeners() {
     modal.classList.add("hidden");
   }
 
-  btnOpen.addEventListener("click", openModal);
+  triggerBtns.forEach(btn => btn.addEventListener("click", openModal));
   btnClose?.addEventListener("click", closeModal);
   btnCancel?.addEventListener("click", closeModal);
 
@@ -2472,9 +2472,10 @@ function setupImageOptimizationListeners() {
       statusText.className = "text-amber-400 font-bold";
       appendLog("Iniciando varredura no Supabase...");
 
-      const [cardapioRes, programasRes] = await Promise.all([
+      const [cardapioRes, programasRes, empresaRes] = await Promise.all([
         supabaseApp.from("cardapio").select("id, nome, imagem_url, imagens"),
-        supabaseApp.from("programas").select("id, nome, imagem_url, imagens")
+        supabaseApp.from("programas").select("id, nome, imagem_url, imagens"),
+        supabaseApp.from("empresa").select("id, imagem_hero, imagem_sobre, imagem_destaque_shake, imagem_destaque_waffle, imagem_destaque_sopa, imagem_destaque_cha, imagem_logo").limit(1).maybeSingle()
       ]);
 
       if (cardapioRes.error) throw cardapioRes.error;
@@ -2482,18 +2483,45 @@ function setupImageOptimizationListeners() {
 
       const cardapioItems = cardapioRes.data || [];
       const programasItems = programasRes.data || [];
+      const empresaData = empresaRes.data || null;
 
       const tasks = [];
       const isSupabaseImage = (url) => typeof url === "string" && url.includes("/storage/v1/object/public/images/");
 
-      cardapioItems.forEach(item => {
+      // 1. Fotos da Página Inicial (Tabela Empresa: Destaques, Sobre Nós, Hero)
+      if (empresaData) {
+        const empFields = [
+          { key: "imagem_destaque_shake", label: "Página Inicial (Destaque Shake)" },
+          { key: "imagem_destaque_waffle", label: "Página Inicial (Destaque Waffle)" },
+          { key: "imagem_destaque_sopa", label: "Página Inicial (Destaque Sopa)" },
+          { key: "imagem_destaque_cha", label: "Página Inicial (Destaque Chá)" },
+          { key: "imagem_sobre", label: "Página Inicial (Foto Sobre Nós)" },
+          { key: "imagem_hero", label: "Página Inicial (Foto Hero)" },
+          { key: "imagem_logo", label: "Logo Institucional" }
+        ];
+        empFields.forEach(f => {
+          const url = empresaData[f.key];
+          if (isSupabaseImage(url)) {
+            tasks.push({
+              table: "empresa",
+              recordId: empresaData.id,
+              name: f.label,
+              fieldKey: f.key,
+              url: url
+            });
+          }
+        });
+      }
+
+      // 2. Fotos de Programas
+      programasItems.forEach(item => {
         const imgs = (item.imagens && Array.isArray(item.imagens) && item.imagens.length > 0) ? item.imagens : (item.imagem_url ? [item.imagem_url] : []);
         imgs.forEach((imgUrl, idx) => {
           if (isSupabaseImage(imgUrl)) {
             tasks.push({
-              table: "cardapio",
+              table: "programas",
               recordId: item.id,
-              name: item.nome,
+              name: "Programa: " + item.nome,
               imgIndex: idx,
               allImgs: imgs,
               url: imgUrl
@@ -2502,14 +2530,15 @@ function setupImageOptimizationListeners() {
         });
       });
 
-      programasItems.forEach(item => {
+      // 3. Fotos do Cardápio (Produtos e Combos)
+      cardapioItems.forEach(item => {
         const imgs = (item.imagens && Array.isArray(item.imagens) && item.imagens.length > 0) ? item.imagens : (item.imagem_url ? [item.imagem_url] : []);
         imgs.forEach((imgUrl, idx) => {
           if (isSupabaseImage(imgUrl)) {
             tasks.push({
-              table: "programas",
+              table: "cardapio",
               recordId: item.id,
-              name: item.nome,
+              name: "Cardápio: " + item.nome,
               imgIndex: idx,
               allImgs: imgs,
               url: imgUrl
@@ -2568,30 +2597,52 @@ function setupImageOptimizationListeners() {
 
           const { data: { publicUrl: newPublicUrl } } = supabaseApp.storage.from("images").getPublicUrl(newPath);
 
-          const updatedImgs = [...t.allImgs];
-          updatedImgs[t.imgIndex] = newPublicUrl;
+          if (t.table === "empresa") {
+            const { error: dbErr } = await supabaseApp
+              .from("empresa")
+              .update({ [t.fieldKey]: newPublicUrl })
+              .eq("id", t.recordId);
 
-          const updatePayload = {
-            imagem_url: updatedImgs[0] || null,
-            imagens: updatedImgs
-          };
+            if (dbErr) throw dbErr;
 
-          const { error: dbErr } = await supabaseApp
-            .from(t.table)
-            .update(updatePayload)
-            .eq("id", t.recordId);
+            const previewMap = {
+              "imagem_hero": "hero-image",
+              "imagem_sobre": "about-image",
+              "imagem_destaque_shake": "destaque-shake-image",
+              "imagem_destaque_waffle": "destaque-waffle-image",
+              "imagem_destaque_sopa": "destaque-sopa-image",
+              "imagem_destaque_cha": "destaque-cha-image"
+            };
+            const inputId = previewMap[t.fieldKey];
+            if (inputId && typeof setFormImagePreview === "function") {
+              setFormImagePreview(inputId, newPublicUrl);
+            }
+          } else {
+            const updatedImgs = [...t.allImgs];
+            updatedImgs[t.imgIndex] = newPublicUrl;
 
-          if (dbErr) throw dbErr;
+            const updatePayload = {
+              imagem_url: updatedImgs[0] || null,
+              imagens: updatedImgs
+            };
 
-          await deleteStorageImages(t.url);
+            const { error: dbErr } = await supabaseApp
+              .from(t.table)
+              .update(updatePayload)
+              .eq("id", t.recordId);
 
-          if (t.table === "cardapio" && Array.isArray(allCardapioItems)) {
-            const local = allCardapioItems.find(c => c.id === t.recordId);
-            if (local) {
-              local.imagem_url = updatePayload.imagem_url;
-              local.imagens = updatePayload.imagens;
+            if (dbErr) throw dbErr;
+
+            if (t.table === "cardapio" && Array.isArray(allCardapioItems)) {
+              const local = allCardapioItems.find(c => c.id === t.recordId);
+              if (local) {
+                local.imagem_url = updatePayload.imagem_url;
+                local.imagens = updatePayload.imagens;
+              }
             }
           }
+
+          await deleteStorageImages(t.url);
 
           processed++;
           appendLog("✅ " + t.name + ": " + (originalSize/1024).toFixed(0) + "KB ➔ " + (newSize/1024).toFixed(0) + "KB (Economia: " + savedKb + "KB)", true);
@@ -2608,7 +2659,7 @@ function setupImageOptimizationListeners() {
       statusText.className = "text-emerald-400 font-bold";
       savingsText.textContent = totalSavedMb + " MB economizados!";
       appendLog("🎉 Otimização concluída! Todas as fotos agora são WebP leves com cache de 1 ano.");
-      showToast("Otimização Turbo concluída! " + totalSavedMb + " MB economizados no cardápio.");
+      showToast("Otimização Turbo concluída! " + totalSavedMb + " MB economizados em todo o site (Página Inicial, Cardápio e Programas).");
       
       if (typeof renderCardapioTable === "function") {
         renderCardapioTable();
